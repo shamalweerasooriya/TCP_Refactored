@@ -1,5 +1,5 @@
 #!/bin/bash
-export CARLA_ROOT= PATH_TO_CARLA
+export CARLA_ROOT=/storage/scratch/e17-4yp-autonomous-driving/CARLA_0.9.10.1
 export CARLA_SERVER=${CARLA_ROOT}/CarlaUE4.sh
 export PYTHONPATH=$PYTHONPATH:${CARLA_ROOT}/PythonAPI
 export PYTHONPATH=$PYTHONPATH:${CARLA_ROOT}/PythonAPI/carla
@@ -20,7 +20,7 @@ export RESUME=True
 # TCP evaluation
 export ROUTES=leaderboard/data/evaluation_routes/routes_lav_valid.xml
 export TEAM_AGENT=team_code/tcp_agent.py
-export TEAM_CONFIG= PATH_TO_MODEL_CKPT
+export TEAM_CONFIG=/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt
 export CHECKPOINT_ENDPOINT=results_TCP.json
 export SCENARIOS=leaderboard/data/scenarios/all_towns_traffic_scenarios.json
 export SAVE_PATH=data/results_TCP/

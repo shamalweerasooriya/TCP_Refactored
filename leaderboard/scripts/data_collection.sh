@@ -1,5 +1,5 @@
 #!/bin/bash
-export CARLA_ROOT= PATH_TO_CARLA
+export CARLA_ROOT=/storage/scratch/e17-4yp-autonomous-driving/CARLA_0.9.10.1
 export CARLA_SERVER=${CARLA_ROOT}/CarlaUE4.sh
 export PYTHONPATH=$PYTHONPATH:${CARLA_ROOT}/PythonAPI
 export PYTHONPATH=$PYTHONPATH:${CARLA_ROOT}/PythonAPI/carla

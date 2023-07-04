@@ -1,0 +1,8 @@
+*.onnx
+lightning_logs/
+data/
+tb_logs/
+wandb/
+*.json
+log/
+TCP/__pycache__
