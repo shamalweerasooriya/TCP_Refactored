@@ -15,6 +15,7 @@ class CARLA_Data(Dataset):
 		self._batch_read_number = 0
 
 		self.front_img = []
+		self.front_img_o = []
 		self.x = []
 		self.y = []
 		self.command = []
@@ -53,6 +54,7 @@ class CARLA_Data(Dataset):
 			self.command += data['target_command']
 
 			self.front_img += data['front_img']
+			self.front_img_o += data['front_img']
 			self.x += data['input_x']
 			self.y += data['input_y']
 			self.theta += data['input_theta']
@@ -84,13 +86,18 @@ class CARLA_Data(Dataset):
 		"""Returns the item at index idx. """
 		data = dict()
 		data['front_img'] = self.front_img[index]
+		data['front_img_o'] = self.front_img_o[index]
 
 		if self.img_aug:
 			data['front_img'] = self._im_transform(augmenter(self._batch_read_number).augment_image(np.array(
 					Image.open(self.root+self.front_img[index][0]))))
+			data['front_img_o'] = T.ToTensor()(augmenter(self._batch_read_number).augment_image(np.array(
+					Image.open(self.root+self.front_img_o[index][0]))))
 		else:
-			data['front_img'] = self._im_transform(np.array(
-					Image.open(self.root+self.front_img[index][0])))
+			img = np.array(
+					Image.open(self.root+self.front_img[index][0]))
+			data['front_img'] = self._im_transform(img)
+			data['front_img_o'] = T.ToTensor()(img)
 
 		# fix for theta=nan in some measurements
 		if np.isnan(self.theta[index][0]):

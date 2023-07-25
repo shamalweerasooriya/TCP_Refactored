@@ -4,6 +4,9 @@ import torch
 from torch import nn
 from TCP.resnet import *
 
+from TCP.monodepth2 import monodepth_model
+
+
 
 class PIDController(object):
 	def __init__(self, K_P=1.0, K_I=0.0, K_D=0.0, n=20):
@@ -39,6 +42,7 @@ class TCP(nn.Module):
 		self.speed_controller = PIDController(K_P=config.speed_KP, K_I=config.speed_KI, K_D=config.speed_KD, n=config.speed_n)
 
 		self.perception = resnet34(pretrained=True)
+		self.depthmap = monodepth_model(use_gpu=True)
 
 		self.measurements = nn.Sequential(
 							nn.Linear(1+2+6, 128),

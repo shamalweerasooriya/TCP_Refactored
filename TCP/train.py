@@ -380,7 +380,7 @@ if __name__ == "__main__":
 														],
 											check_val_every_n_epoch = args.val_every,
 											max_epochs = args.epochs,
-											logger=[logger, wandb_logger]
+											logger=[]
 											)
 	if args.loadfromcheckpoint>0:
 		trainer = pl.Trainer(
@@ -435,17 +435,3 @@ if __name__ == "__main__":
 		trainer.fit(planner, dataloader_train, dataloader_val)
 	else:
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)
-
-
-
-
-		
-
-
-
-
-
-
-# checkpoint = torch.load('/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt', map_location='cpu')
-# /storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/TCP/epoch=11-last.ckpt
-# print(checkpoint.keys())
