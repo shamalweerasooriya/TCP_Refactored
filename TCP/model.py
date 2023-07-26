@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from TCP.resnet import *
 
-from TCP.monodepth2 import monodepth_model
+from TCP.monodepth2 import MonodepthModel
 
 
 
@@ -42,7 +42,7 @@ class TCP(nn.Module):
 		self.speed_controller = PIDController(K_P=config.speed_KP, K_I=config.speed_KI, K_D=config.speed_KD, n=config.speed_n)
 
 		self.perception = resnet34(pretrained=True)
-		self.depthmap = monodepth_model(use_gpu=True)
+		self.depthmap = MonodepthModel(use_gpu=True)
 
 		self.measurements = nn.Sequential(
 							nn.Linear(1+2+6, 128),
@@ -79,12 +79,12 @@ class TCP(nn.Module):
 						)
 
 		self.value_branch_traj = nn.Sequential(
-					nn.Linear(256, 512),
+					nn.Linear(256, 256),
 					nn.ReLU(inplace=True),
-					nn.Linear(512, 512),
+					nn.Linear(256, 256),
 					nn.Dropout2d(p=0.5),
 					nn.ReLU(inplace=True),
-					nn.Linear(512, 1),
+					nn.Linear(256, 1),
 				)
 		self.value_branch_ctrl = nn.Sequential(
 					nn.Linear(256, 256),
@@ -139,8 +139,12 @@ class TCP(nn.Module):
 			)
 		
 
-	def forward(self, img, state, target_point):
+	def forward(self, img, img_o, state, target_point):
 		feature_emb, cnn_feature = self.perception(img)
+		# Feature embeddings : torch.Size([32, 1000])
+		# CNN features: torch.Size([32, 512, 8, 29])
+		features, depth_features = self.depthmap.predict_depth_batch(img_o)
+		# depth features: torch.Size([32, 192, 640])
 		outputs = {}
 		outputs['pred_speed'] = self.speed_branch(feature_emb)
 		measurement_feature = self.measurements(state)

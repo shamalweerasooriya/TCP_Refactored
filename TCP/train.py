@@ -29,8 +29,8 @@ class TCP_planner(pl.LightningModule):
 		self.lr = lr
 		self.config = config
 		self.model = TCP(config)
-		# self._load_weight()
-		self.save_hyperparameters()
+		self._load_weight()
+		# self.save_hyperparameters()
 
 	def _load_weight(self):
 		# They are loading the state dict from roach .pth file
@@ -56,6 +56,7 @@ class TCP_planner(pl.LightningModule):
 
 	def training_step(self, batch, batch_idx):
 		front_img = batch['front_img']
+		front_img_o = batch['front_img_o']
 		speed = batch['speed'].to(dtype=torch.float32).view(-1,1) / 12.
 		target_point = batch['target_point'].to(dtype=torch.float32)
 		command = batch['target_command']
@@ -66,7 +67,7 @@ class TCP_planner(pl.LightningModule):
 
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, state, target_point)
+		pred = self.model(front_img, front_img_o, state, target_point)
 
 		if(batch_idx==0):
 			self.ref_front_img = front_img[0]
@@ -126,6 +127,7 @@ class TCP_planner(pl.LightningModule):
 
 	def validation_step(self, batch, batch_idx):
 		front_img = batch['front_img']
+		front_img_o = batch['front_img_o']
 		speed = batch['speed'].to(dtype=torch.float32).view(-1,1) / 12.
 		target_point = batch['target_point'].to(dtype=torch.float32)
 		command = batch['target_command']
@@ -134,7 +136,7 @@ class TCP_planner(pl.LightningModule):
 		feature = batch['feature']
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, state, target_point)
+		pred = self.model(front_img, front_img_o, state, target_point)
 		dist_sup = Beta(batch['action_mu'], batch['action_sigma'])
 		dist_pred = Beta(pred['mu_branches'], pred['sigma_branches'])
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
@@ -332,7 +334,7 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="transfer_learning_testing")
+	logger = TensorBoardLogger("tb_logs", name="monodepth_initial_test")
 	wandb_logger = WandbLogger()
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
@@ -343,7 +345,7 @@ if __name__ == "__main__":
 	parser.add_argument('--logdir', type=str, default='log', help='Directory to log data to.')
 	parser.add_argument('--gpus', type=int, default=1, help='number of gpus')
 	parser.add_argument('--loadfromcheckpoint', type=int, default=0, help='Load from n th checkpoint')
-	parser.add_argument('--transferloading', type=bool, default=0, help='Load predefined part of the model.')
+	parser.add_argument('--transferloading', type=bool, default=False, help='Load predefined part of the model.')
 
 
 	args = parser.parse_args()
@@ -380,7 +382,7 @@ if __name__ == "__main__":
 														],
 											check_val_every_n_epoch = args.val_every,
 											max_epochs = args.epochs,
-											logger=[]
+											logger=[logger]
 											)
 	if args.loadfromcheckpoint>0:
 		trainer = pl.Trainer(
