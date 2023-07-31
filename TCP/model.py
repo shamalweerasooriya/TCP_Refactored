@@ -42,7 +42,7 @@ class TCP(nn.Module):
 		self.turn_controller = PIDController(K_P=config.turn_KP, K_I=config.turn_KI, K_D=config.turn_KD, n=config.turn_n)
 		self.speed_controller = PIDController(K_P=config.speed_KP, K_I=config.speed_KI, K_D=config.speed_KD, n=config.speed_n)
 
-		self.perception = resnet34(pretrained=True)
+		# self.perception = resnet34(pretrained=True)
 		self.depthmap = MonodepthModel(use_gpu=True)
 
 		self.measurements = nn.Sequential(
@@ -182,10 +182,7 @@ class TCP(nn.Module):
 		pred_wp = torch.stack(output_wp, dim=1)
 		outputs['pred_wp'] = pred_wp
 
-		features_resized = (F.interpolate(features.unsqueeze(1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1)
-		depth_features_resized = (nn.functional.interpolate(depth_features.unsqueeze(1).unsqueeze(-1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1)
-		combined_features = features_resized + depth_features_resized
-
+		combined_features = (F.interpolate(features.unsqueeze(1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1) + (nn.functional.interpolate(depth_features.unsqueeze(1).unsqueeze(-1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1)
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
 		init_att = self.init_att(measurement_feature).view(-1, 1, 8, 29)
 		feature_emb = torch.sum(combined_features*init_att, dim=(2, 3))

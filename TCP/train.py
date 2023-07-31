@@ -29,7 +29,7 @@ class TCP_planner(pl.LightningModule):
 		self.lr = lr
 		self.config = config
 		self.model = TCP(config)
-		self._load_weight()
+		# self._load_weight()
 		self.save_hyperparameters()
 
 	def _load_weight(self):
@@ -70,8 +70,8 @@ class TCP_planner(pl.LightningModule):
 		pred = self.model(front_img, front_img_o, state, target_point)
 
 		if(batch_idx==0):
-			self.ref_front_img = front_img[0]
-			self.ref_front_img_all = front_img
+			self.ref_front_img = front_img_o[0]
+			self.ref_front_img_all = front_img_o
 			self.ref_state = state[0] 
 			self.ref_target_point = target_point[0] 
 			print("ref_img_shape: ", self.ref_front_img.shape)
@@ -104,7 +104,7 @@ class TCP_planner(pl.LightningModule):
 		self.log('train_future_feature_loss', future_feature_loss.item())
 		self.log('train_future_action_loss', future_action_loss.item())
 		self.log('train_total_loss', loss.item())
-		randint = random.randint(0, 19)
+		randint = random.randint(0, len(batch['speed'])-1)
 		self.log('speed', batch['speed'].to(dtype=torch.float32).view(-1,1)[randint])
 		output = {
             "loss": loss,
@@ -201,7 +201,7 @@ class TCP_planner(pl.LightningModule):
 			# self.logger.experiment.add_graph(self.model, self.ref_front_img.unsqueeze(0), self.ref_state.unsqueeze(0), self.ref_target_point.unsqueeze(0))
 			# logger._log_graph = True
    
-		self.visActivations(self.ref_front_img, self.ref_state, self.ref_target_point)
+		# self.visActivations(self.ref_front_img, self.ref_state, self.ref_target_point)
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
@@ -269,12 +269,14 @@ class TCP_planner(pl.LightningModule):
 		target_point = target_point.unsqueeze(0)
   
 		# print("vis in ---", img.shape, state.shape, target_point.shape)
-		feature_emb, cnn_feature = self.model.perception(img)
+		# feature_emb, cnn_feature = self.model.perception(img)
+		features, depth_features = self.model.depthmap.predict_depth_batch(img)
+		encoded_depth_features = self.model.depth_feat_encoder(depth_features)
 		test_output = {}
-		test_output['pred_speed'] = self.model.speed_branch(feature_emb)
+		test_output['pred_speed'] = self.model.speed_branch(encoded_depth_features)
 		measurement_feature = self.model.measurements(state)
 		
-		j_traj = self.model.join_traj(torch.cat([feature_emb, measurement_feature], 1))
+		j_traj = self.model.join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
 		test_output['pred_value_traj'] = self.model.value_branch_traj(j_traj)
 		test_output['pred_features_traj'] = j_traj
 		z = j_traj
@@ -295,10 +297,11 @@ class TCP_planner(pl.LightningModule):
 
 		pred_wp = torch.stack(output_wp, dim=1)
 		test_output['pred_wp'] = pred_wp
+		combined_features = (F.interpolate(features.unsqueeze(1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1) + (nn.functional.interpolate(depth_features.unsqueeze(1).unsqueeze(-1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1)
 
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
 		init_att = self.model.init_att(measurement_feature).view(-1, 1, 8, 29)
-		feature_emb = torch.sum(cnn_feature*init_att, dim=(2, 3))
+		feature_emb = torch.sum(combined_features*init_att, dim=(2, 3))
 		j_ctrl = self.model.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
 		test_output['pred_value_ctrl'] = self.model.value_branch_ctrl(j_ctrl)
 		test_output['pred_features_ctrl'] = j_ctrl
@@ -320,7 +323,7 @@ class TCP_planner(pl.LightningModule):
 			wp_att = self.model.wp_att(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
 			attention_map = torch.Tensor.cpu(wp_att.squeeze()).detach()
 			self.logger[0].experiment.add_image("attention_map_" + str(l), attention_map, self.current_epoch, dataformats="HW")
-			new_feature_emb = torch.sum(cnn_feature*wp_att, dim=(2, 3))
+			new_feature_emb = torch.sum(combined_features*wp_att, dim=(2, 3))
 			merged_feature = self.model.merge(torch.cat([h, new_feature_emb], 1))
 			dx = self.model.output_ctrl(merged_feature)
 			x = dx + x
