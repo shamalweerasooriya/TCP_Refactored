@@ -119,17 +119,17 @@ class TCP(nn.Module):
 		self.decoder_traj = nn.GRUCell(input_size=4, hidden_size=256)
 		self.output_traj = nn.Linear(256, 2)
 
-		self.init_att = nn.Sequential(
+		self.init_att_modified = nn.Sequential(
 				nn.Linear(128, 256),
 				nn.ReLU(inplace=True),
-				nn.Linear(256, 29*8),
+				nn.Linear(256, 20*6),
 				nn.Softmax(1)
 			)
 
-		self.wp_att = nn.Sequential(
+		self.wp_att_modified = nn.Sequential(
 				nn.Linear(256+256, 256),
 				nn.ReLU(inplace=True),
-				nn.Linear(256, 29*8),
+				nn.Linear(256, 20*6),
 				nn.Softmax(1)
 			)
 
@@ -139,13 +139,20 @@ class TCP(nn.Module):
 				nn.Linear(512, 256),
 			)
 
-		self.depth_feat_encoder = nn.Sequential(
+		self.feat_encoder = nn.Sequential(
 				nn.Flatten(),                  
-				nn.Linear(192 * 640, 1000),    
+				nn.Linear(512*6*20, 1000),    
 				nn.ReLU(),
 				nn.Linear(1000, 1000), 
 				nn.ReLU(),
 			)
+		
+		self.depth_feat_encoder = nn.Sequential(
+									nn.Linear(40, 20),
+									nn.ReLU(),
+									nn.Linear(20, 20),
+									nn.ReLU(),
+								)
 
 		
 
@@ -155,7 +162,7 @@ class TCP(nn.Module):
 		# CNN features: torch.Size([32, 512, 8, 29])
 		features, depth_features = self.depthmap.predict_depth_batch(img_o)
 		# depth features: torch.Size([32, 192, 640])
-		encoded_depth_features = self.depth_feat_encoder(depth_features)
+		encoded_depth_features = self.feat_encoder(features.view(-1, 512*6*20))
 		outputs = {}
 		outputs['pred_speed'] = self.speed_branch(encoded_depth_features)
 		measurement_feature = self.measurements(state)
@@ -182,10 +189,10 @@ class TCP(nn.Module):
 		pred_wp = torch.stack(output_wp, dim=1)
 		outputs['pred_wp'] = pred_wp
 
-		combined_features = (F.interpolate(features.unsqueeze(1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1) + (nn.functional.interpolate(depth_features.unsqueeze(1).unsqueeze(-1), size=(512, 8, 29), mode='trilinear', align_corners=False)).squeeze(1)
+		depth_features_encoded = self.depth_feat_encoder(depth_features.view(-1, 512, 6, 40))
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
-		init_att = self.init_att(measurement_feature).view(-1, 1, 8, 29)
-		feature_emb = torch.sum(combined_features*init_att, dim=(2, 3))
+		init_att = self.init_att_modified(measurement_feature).view(-1, 1, 6, 20)
+		feature_emb = torch.sum(depth_features_encoded*init_att, dim=(2, 3))
 		j_ctrl = self.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
 		outputs['pred_value_ctrl'] = self.value_branch_ctrl(j_ctrl)
 		outputs['pred_features_ctrl'] = j_ctrl
@@ -204,8 +211,8 @@ class TCP(nn.Module):
 		for _ in range(self.config.pred_len):
 			x_in = torch.cat([x, mu, sigma], dim=1)
 			h = self.decoder_ctrl(x_in, h)
-			wp_att = self.wp_att(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
-			new_feature_emb = torch.sum(combined_features*wp_att, dim=(2, 3))
+			wp_att = self.wp_att_modified(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 6, 20)
+			new_feature_emb = torch.sum(depth_features_encoded*wp_att, dim=(2, 3))
 			merged_feature = self.merge(torch.cat([h, new_feature_emb], 1))
 			dx = self.output_ctrl(merged_feature)
 			x = dx + x

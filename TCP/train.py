@@ -21,6 +21,7 @@ from pytorch_lightning.loggers import WandbLogger
 from TCP.model import TCP
 from TCP.data import CARLA_Data
 from TCP.config import GlobalConfig
+from torch import nn
 
 
 class TCP_planner(pl.LightningModule):
@@ -338,7 +339,7 @@ class TCP_planner(pl.LightningModule):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	logger = TensorBoardLogger("tb_logs", name="Monodepth_resnet_replacement_test_01")
-	wandb_logger = WandbLogger()
+	wandb_logger = WandbLogger(name="Monodepth_resnet_replacement_test_01")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')
@@ -403,7 +404,7 @@ if __name__ == "__main__":
 						],
 			check_val_every_n_epoch = args.val_every,
 			max_epochs = args.epochs,
-			logger=[logger, wandb_logger])
+			logger=[logger])
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)
 	elif args.transferloading:
 		TCP_model.load_from_checkpoint(
