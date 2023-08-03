@@ -141,7 +141,7 @@ class TCP(nn.Module):
 		#depth branch networks
 
 		self.depth_join_traj = nn.Sequential(
-				nn.Linear(192+128, 512),
+				nn.Linear(1000+128, 512),
 				nn.ReLU(inplace=True),
 				nn.Linear(512, 512),
 				nn.ReLU(inplace=True),
@@ -157,6 +157,13 @@ class TCP(nn.Module):
 					nn.ReLU(inplace=True),
 					nn.Linear(256, 1),
 				)
+		self.feat_encoder = nn.Sequential(
+				nn.Flatten(),                  
+				nn.Linear(512*6*40, 1000),    
+				nn.ReLU(),
+				nn.Linear(1000, 1000), 
+				nn.ReLU(),
+			)
 		
 		self.depth_decoder_traj = nn.GRUCell(input_size=4, hidden_size=256)
 		self.depth_output_traj = nn.Linear(256, 2)
@@ -173,7 +180,9 @@ class TCP(nn.Module):
 		outputs['pred_speed'] = self.speed_branch(feature_emb)
 		measurement_feature = self.measurements(state)
 
-		depth_j_traj = self.depth_join_traj(torch.cat([depth_features, measurement_feature], 1))
+		encoded_depth_features = self.feat_encoder(depth_features.view(-1, 512*6*40))
+
+		depth_j_traj = self.depth_join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
 		outputs['pred_depth_value_traj'] = self.depth_value_branch_traj(depth_j_traj)
 		outputs['pred_depth_features_traj'] = depth_j_traj
 		z = depth_j_traj
