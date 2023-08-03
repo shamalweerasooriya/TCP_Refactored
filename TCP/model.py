@@ -138,16 +138,60 @@ class TCP(nn.Module):
 				nn.Linear(512, 256),
 			)
 		
+		#depth branch networks
+
+		self.depth_join_traj = nn.Sequential(
+				nn.Linear(192+128, 512),
+				nn.ReLU(inplace=True),
+				nn.Linear(512, 512),
+				nn.ReLU(inplace=True),
+				nn.Linear(512, 256),
+				nn.ReLU(inplace=True),
+			)
+		
+		self.depth_value_branch_traj = nn.Sequential(
+					nn.Linear(256, 256),
+					nn.ReLU(inplace=True),
+					nn.Linear(256, 256),
+					nn.Dropout2d(p=0.5),
+					nn.ReLU(inplace=True),
+					nn.Linear(256, 1),
+				)
+		
+		self.depth_decoder_traj = nn.GRUCell(input_size=4, hidden_size=256)
+		self.depth_output_traj = nn.Linear(256, 2)
+		
 
 	def forward(self, img, img_o, state, target_point):
 		feature_emb, cnn_feature = self.perception(img)
 		# Feature embeddings : torch.Size([32, 1000])
 		# CNN features: torch.Size([32, 512, 8, 29])
 		features, depth_features = self.depthmap.predict_depth_batch(img_o)
+		# features: torch.Size([32, 512, 6, 20])
 		# depth features: torch.Size([32, 192, 640])
 		outputs = {}
 		outputs['pred_speed'] = self.speed_branch(feature_emb)
 		measurement_feature = self.measurements(state)
+
+		depth_j_traj = self.depth_join_traj(torch.cat([depth_features, measurement_feature], 1))
+		outputs['pred_depth_value_traj'] = self.depth_value_branch_traj(depth_j_traj)
+		outputs['pred_depth_features_traj'] = depth_j_traj
+		z = depth_j_traj
+		output_depth_wp = list()
+		depth_traj_hidden_state = list()
+
+		x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).type_as(z)
+
+		for _ in range(self.config.pred_len):
+			x_in = torch.cat([x, target_point], dim=1)
+			z = self.depth_decoder_traj(x_in, z)
+			depth_traj_hidden_state.append(z)
+			dx = self.depth_output_traj(z)
+			x = dx + x
+			output_depth_wp.append(x)
+
+		pred_depth_wp = torch.stack(output_depth_wp, dim=1)
+		outputs['pred_depth_wp'] = pred_depth_wp
 		
 		j_traj = self.join_traj(torch.cat([feature_emb, measurement_feature], 1))
 		outputs['pred_value_traj'] = self.value_branch_traj(j_traj)

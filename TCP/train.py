@@ -81,6 +81,8 @@ class TCP_planner(pl.LightningModule):
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 		action_loss = torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
 		speed_loss = F.l1_loss(pred['pred_speed'], speed) * self.config.speed_weight
+		depth_value_loss = (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_traj'], value)) * self.config.value_weight
+		depth_feature_loss = (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_traj'], feature))* self.config.features_weight
 		value_loss = (F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * self.config.value_weight
 		feature_loss = (F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* self.config.features_weight
 
@@ -94,11 +96,15 @@ class TCP_planner(pl.LightningModule):
 			future_feature_loss += F.mse_loss(pred['future_feature'][i], batch['future_feature'][i]) * self.config.features_weight
 		future_feature_loss /= self.config.pred_len
 		future_action_loss /= self.config.pred_len
+		depth_wp_loss = F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean()
 		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean()
-		loss = action_loss + speed_loss + value_loss + feature_loss + wp_loss+ future_feature_loss + future_action_loss
+		loss = action_loss + speed_loss + depth_value_loss + depth_feature_loss + value_loss + feature_loss + depth_wp_loss + wp_loss + future_feature_loss + future_action_loss
 		self.log('train_action_loss', action_loss.item())
+		self.log('train_depth_wp_loss_loss', depth_wp_loss.item())
 		self.log('train_wp_loss_loss', wp_loss.item())
 		self.log('train_speed_loss', speed_loss.item())
+		self.log('train_value_loss', depth_value_loss.item())
+		self.log('train_feature_loss', depth_feature_loss.item())
 		self.log('train_value_loss', value_loss.item())
 		self.log('train_feature_loss', feature_loss.item())
 		self.log('train_future_feature_loss', future_feature_loss.item())
@@ -110,8 +116,11 @@ class TCP_planner(pl.LightningModule):
             "loss": loss,
             'train_action_loss':  action_loss,
 			'train_speed_loss':  speed_loss,
+			'train_depth_value_loss': depth_value_loss,
+			'train_depth_feature_loss': depth_feature_loss,
 			'train_value_loss': value_loss,
 			'train_feature_loss': feature_loss,
+			'train_depth_wp_loss_loss': depth_wp_loss,
 			'train_wp_loss_loss': wp_loss,
 			'train_future_feature_loss': future_feature_loss,
 			'train_future_action_loss': future_action_loss,
@@ -142,8 +151,11 @@ class TCP_planner(pl.LightningModule):
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 		action_loss = torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
 		speed_loss = F.l1_loss(pred['pred_speed'], speed) * self.config.speed_weight
+		depth_value_loss = (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_traj'], value)) * self.config.value_weight
+		depth_feature_loss = (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_traj'], feature))* self.config.features_weight
 		value_loss = (F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * self.config.value_weight
 		feature_loss = (F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* self.config.features_weight
+		depth_wp_loss = F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean()
 		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean()
 
 		B = batch['action_mu'].shape[0]
@@ -175,16 +187,22 @@ class TCP_planner(pl.LightningModule):
 
 		self.log("val_action_loss", action_loss.item(), sync_dist=True)
 		self.log('val_speed_loss', speed_loss.item(), sync_dist=True)
+		self.log('val_depth_value_loss', depth_value_loss.item(), sync_dist=True)
+		self.log('val_depth_feature_loss', depth_feature_loss.item(), sync_dist=True)
 		self.log('val_value_loss', value_loss.item(), sync_dist=True)
 		self.log('val_feature_loss', feature_loss.item(), sync_dist=True)
+		self.log('val_depth_wp_loss_loss', depth_wp_loss.item(), sync_dist=True)
 		self.log('val_wp_loss_loss', wp_loss.item(), sync_dist=True)
 		self.log('val_future_feature_loss', future_feature_loss.item(), sync_dist=True)
 		self.log('val_future_action_loss', future_action_loss.item(), sync_dist=True)
 		self.log('val_loss', val_loss.item(), sync_dist=True)
 		return {'val_action_loss':  action_loss,
           		'val_speed_loss':  speed_loss,
+			  	'val_depth_value_loss': depth_value_loss,
+				'val_depth_feature_loss': depth_feature_loss,
 				'val_value_loss': value_loss,
 				'val_feature_loss': feature_loss,
+				'val_depth_wp_loss_loss': depth_wp_loss,
 				'val_wp_loss_loss': wp_loss,
 				'val_future_feature_loss': future_feature_loss,
 				'val_future_action_loss': future_action_loss,
@@ -205,6 +223,9 @@ class TCP_planner(pl.LightningModule):
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
+		train_depth_value_loss = torch.stack([x['train_depth_value_loss'] for x in outputs]).mean()
+		train_depth_feature_loss = torch.stack([x['train_depth_feature_loss'] for x in outputs]).mean()
+		train_depth_wp_loss_loss = torch.stack([x['train_depth_wp_loss_loss'] for x in outputs]).mean()
 		train_value_loss = torch.stack([x['train_value_loss'] for x in outputs]).mean()
 		train_feature_loss = torch.stack([x['train_feature_loss'] for x in outputs]).mean()
 		train_wp_loss_loss = torch.stack([x['train_wp_loss_loss'] for x in outputs]).mean()
@@ -214,6 +235,9 @@ class TCP_planner(pl.LightningModule):
 					
 		self.logger[0].experiment.add_scalar("Loss/train_action_loss", train_action_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_speed_loss", train_speed_loss, self.current_epoch)
+		self.logger[0].experiment.add_scalar("Loss/train_depth_value_loss", train_depth_value_loss, self.current_epoch)
+		self.logger[0].experiment.add_scalar("Loss/train_depth_feature_loss", train_depth_feature_loss, self.current_epoch)
+		self.logger[0].experiment.add_scalar("Loss/train_depth_wp_loss_loss", train_depth_wp_loss_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_value_loss", train_value_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_feature_loss", train_feature_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_wp_loss_loss", train_wp_loss_loss, self.current_epoch)
@@ -234,6 +258,9 @@ class TCP_planner(pl.LightningModule):
 	def validation_epoch_end(self, outputs):
 			val_action_loss = torch.stack([x['val_action_loss'] for x in outputs]).mean()
 			val_speed_loss =  torch.stack([x['val_speed_loss'] for x in outputs]).mean()
+			val_depth_value_loss = torch.stack([x['val_depth_value_loss'] for x in outputs]).mean()
+			val_depth_feature_loss = torch.stack([x['val_depth_feature_loss'] for x in outputs]).mean()
+			val_depth_wp_loss_loss = torch.stack([x['val_depth_wp_loss_loss'] for x in outputs]).mean()
 			val_value_loss = torch.stack([x['val_value_loss'] for x in outputs]).mean()
 			val_feature_loss = torch.stack([x['val_feature_loss'] for x in outputs]).mean()
 			val_wp_loss_loss = torch.stack([x['val_wp_loss_loss'] for x in outputs]).mean()
@@ -243,6 +270,9 @@ class TCP_planner(pl.LightningModule):
 						
 			self.logger[0].experiment.add_scalar("Loss/val_action_loss", val_action_loss, self.current_epoch)
 			self.logger[0].experiment.add_scalar("Loss/val_speed_loss", val_speed_loss, self.current_epoch)
+			self.logger[0].experiment.add_scalar("Loss/val_depth_value_loss", val_depth_value_loss, self.current_epoch)
+			self.logger[0].experiment.add_scalar("Loss/val_depth_feature_loss", val_depth_feature_loss, self.current_epoch)
+			self.logger[0].experiment.add_scalar("Loss/val_depth_wp_loss_loss", val_depth_wp_loss_loss, self.current_epoch)
 			self.logger[0].experiment.add_scalar("Loss/val_value_loss", val_value_loss, self.current_epoch)
 			self.logger[0].experiment.add_scalar("Loss/val_feature_loss", val_feature_loss, self.current_epoch)
 			self.logger[0].experiment.add_scalar("Loss/val_wp_loss_loss", val_wp_loss_loss, self.current_epoch)
