@@ -29,8 +29,8 @@ class TCP_planner(pl.LightningModule):
 		self.lr = lr
 		self.config = config
 		self.model = TCP(config)
-		self._load_weight()
-		# self.save_hyperparameters()
+		# self._load_weight()
+		self.save_hyperparameters()
 
 	def _load_weight(self):
 		# They are loading the state dict from roach .pth file
@@ -364,8 +364,8 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="monodepth_initial_test")
-	wandb_logger = WandbLogger()
+	logger = TensorBoardLogger("tb_logs", name="depth-attention")
+	wandb_logger = WandbLogger(name="depth-attention")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')
@@ -412,7 +412,7 @@ if __name__ == "__main__":
 														],
 											check_val_every_n_epoch = args.val_every,
 											max_epochs = args.epochs,
-											logger=[logger]
+											logger=[logger, wandb_logger]
 											)
 	if args.loadfromcheckpoint>0:
 		trainer = pl.Trainer(
@@ -433,37 +433,11 @@ if __name__ == "__main__":
 			logger=[logger, wandb_logger])
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)
 	elif args.transferloading:
-		print("---------------------------------------------------------------------------")
-		print("Transfer learning")
-		lr = 0.0001
-		config = GlobalConfig()
-		planner = TCP_planner(config, lr=0.0001)
-		model_dist = torch.load("/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt", map_location=torch.device('cpu'))
-		state_dict = model_dist["state_dict"]
-		remove_prefix = 'model.'
-		state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
-		state_dict1 = {}
-		itr = 0
-		for i in state_dict.keys():
-			if "value_branch_traj" not in i:
-				state_dict1[i]=state_dict[i]
-			else:
-				sizes = [torch.Size([512, 256]),
-							torch.Size([512]),
-							torch.Size([512, 512]),
-							torch.Size([512]),
-							torch.Size([1, 512]),
-							torch.Size([1])]
-				state_dict1[i] = torch.zeros(sizes[itr])
-				itr+=1
-		key_word = 'value_head'
-		planner.model.load_state_dict(state_dict1)
-		optimizer = optim.Adam(planner.model.parameters(), lr=lr, weight_decay=1e-7)
-		lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 30, 0.5)
-		optimizer_state_disk = model_dist["optimizer_states"][0]
-		optimizer.load_state_dict(optimizer_state_disk)
-		optimizer_schudular_disk = model_dist["lr_schedulers"][0]
-		lr_scheduler.load_state_dict(optimizer_schudular_disk) 
-		trainer.fit(planner, dataloader_train, dataloader_val)
+		TCP_model.load_from_checkpoint(
+			"/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt",
+			strict=False,
+			config=config,
+			lr=args.lr)
+		trainer.fit(TCP_model, dataloader_train, dataloader_val)
 	else:
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)
