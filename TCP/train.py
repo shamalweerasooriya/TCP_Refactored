@@ -71,6 +71,7 @@ class TCP_planner(pl.LightningModule):
 
 		if(batch_idx==0):
 			self.ref_front_img = front_img[0]
+			self.ref_front_img_o = front_img_o[0]
 			self.ref_front_img_all = front_img
 			self.ref_state = state[0] 
 			self.ref_target_point = target_point[0] 
@@ -110,8 +111,6 @@ class TCP_planner(pl.LightningModule):
 		self.log('train_future_feature_loss', future_feature_loss.item())
 		self.log('train_future_action_loss', future_action_loss.item())
 		self.log('train_total_loss', loss.item())
-		randint = random.randint(0, 19)
-		self.log('speed', batch['speed'].to(dtype=torch.float32).view(-1,1)[randint])
 		output = {
             "loss": loss,
             'train_action_loss':  action_loss,
@@ -219,7 +218,7 @@ class TCP_planner(pl.LightningModule):
 			# self.logger.experiment.add_graph(self.model, self.ref_front_img.unsqueeze(0), self.ref_state.unsqueeze(0), self.ref_target_point.unsqueeze(0))
 			# logger._log_graph = True
    
-		self.visActivations(self.ref_front_img, self.ref_state, self.ref_target_point)
+		self.visActivations(self.ref_front_img, self.ref_front_img_o, self.ref_state, self.ref_target_point)
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
@@ -282,7 +281,7 @@ class TCP_planner(pl.LightningModule):
 			
 			return {'val_loss': val_loss}
 
-	def visActivations(self, img, state, target_point):
+	def visActivations(self, img, img_o, state, target_point):
 		
 		# img = torch.Tensor.cpu(img).numpy().T
 		# img = img.swapaxes(0, 1)
@@ -297,6 +296,23 @@ class TCP_planner(pl.LightningModule):
 		img = img.unsqueeze(0)
 		state = state.unsqueeze(0)
 		target_point = target_point.unsqueeze(0)
+		features, depth_features = self.depthmap.predict_depth_batch(img_o)
+
+		encoded_depth_features = self.feat_encoder(depth_features.view(-1, 512*6*40))
+		depth_j_traj = self.depth_join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
+		z = depth_j_traj
+		output_depth_wp = list()
+		depth_traj_hidden_state = list()
+
+		x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).type_as(z)
+
+		for _ in range(self.config.pred_len):
+			x_in = torch.cat([x, target_point], dim=1)
+			z = self.model.depth_decoder_traj(x_in, z)
+			depth_traj_hidden_state.append(z)
+			dx = self.depth_output_traj(z)
+			x = dx + x
+			output_depth_wp.append(x)
   
 		# print("vis in ---", img.shape, state.shape, target_point.shape)
 		feature_emb, cnn_feature = self.model.perception(img)
@@ -317,9 +333,9 @@ class TCP_planner(pl.LightningModule):
 		# autoregressive generation of output waypoints
 		for _ in range(self.model.config.pred_len):
 			x_in = torch.cat([x, target_point], dim=1)
-			z = self.model.decoder_traj(x_in, z)
+			z = self.model.decoder_traj_mod(x_in, torch.cat((depth_j_traj, j_traj), dim=1))
 			traj_hidden_state.append(z)
-			dx = self.model.output_traj(z)
+			dx = self.model.output_traj_mod(z)
 			x = dx + x
 			output_wp.append(x)
 
@@ -327,6 +343,7 @@ class TCP_planner(pl.LightningModule):
 		test_output['pred_wp'] = pred_wp
 
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
+		depth_traj_hidden_state = torch.stack(depth_traj_hidden_state, dim=1)
 		init_att = self.model.init_att(measurement_feature).view(-1, 1, 8, 29)
 		feature_emb = torch.sum(cnn_feature*init_att, dim=(2, 3))
 		j_ctrl = self.model.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
@@ -347,7 +364,7 @@ class TCP_planner(pl.LightningModule):
 		for l in range(self.config.pred_len):
 			x_in = torch.cat([x, mu, sigma], dim=1)
 			h = self.model.decoder_ctrl(x_in, h)
-			wp_att = self.model.wp_att(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
+			wp_att = self.model.wp_att_mod(torch.cat([h, traj_hidden_state[:, _], depth_traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
 			attention_map = torch.Tensor.cpu(wp_att.squeeze()).detach()
 			self.logger[0].experiment.add_image("attention_map_" + str(l), attention_map, self.current_epoch, dataformats="HW")
 			new_feature_emb = torch.sum(cnn_feature*wp_att, dim=(2, 3))
@@ -364,8 +381,8 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="depth-attention")
-	wandb_logger = WandbLogger(name="depth-attention")
+	logger = TensorBoardLogger("tb_logs", name="combined-attention")
+	wandb_logger = WandbLogger(name="combined-attention")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')

@@ -115,8 +115,8 @@ class TCP(nn.Module):
 		self.dist_sigma = nn.Sequential(nn.Linear(256, dim_out), nn.Softplus())
 
 
-		self.decoder_traj = nn.GRUCell(input_size=4, hidden_size=256)
-		self.output_traj = nn.Linear(256, 2)
+		self.decoder_traj_mod = nn.GRUCell(input_size=4, hidden_size=512)
+		self.output_traj_mod = nn.Linear(512, 2)
 
 		self.init_att = nn.Sequential(
 				nn.Linear(128, 256),
@@ -125,8 +125,8 @@ class TCP(nn.Module):
 				nn.Softmax(1)
 			)
 
-		self.wp_att = nn.Sequential(
-				nn.Linear(256+256, 256),
+		self.wp_att_mod = nn.Sequential(
+				nn.Linear(256+256+512, 256),
 				nn.ReLU(inplace=True),
 				nn.Linear(256, 29*8),
 				nn.Softmax(1)
@@ -215,9 +215,9 @@ class TCP(nn.Module):
 		# autoregressive generation of output waypoints
 		for _ in range(self.config.pred_len):
 			x_in = torch.cat([x, target_point], dim=1)
-			z = self.decoder_traj(x_in, z)
+			z = self.decoder_traj_mod(x_in, torch.cat((depth_j_traj, j_traj), dim=1))
 			traj_hidden_state.append(z)
-			dx = self.output_traj(z)
+			dx = self.output_traj_mod(z)
 			x = dx + x
 			output_wp.append(x)
 
@@ -225,6 +225,7 @@ class TCP(nn.Module):
 		outputs['pred_wp'] = pred_wp
 
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
+		depth_traj_hidden_state = torch.stack(depth_traj_hidden_state, dim=1)
 		init_att = self.init_att(measurement_feature).view(-1, 1, 8, 29)
 		feature_emb = torch.sum(cnn_feature*init_att, dim=(2, 3))
 		j_ctrl = self.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
@@ -245,7 +246,7 @@ class TCP(nn.Module):
 		for _ in range(self.config.pred_len):
 			x_in = torch.cat([x, mu, sigma], dim=1)
 			h = self.decoder_ctrl(x_in, h)
-			wp_att = self.wp_att(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
+			wp_att = self.wp_att_mod(torch.cat([h, traj_hidden_state[:, _], depth_traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
 			new_feature_emb = torch.sum(cnn_feature*wp_att, dim=(2, 3))
 			merged_feature = self.merge(torch.cat([h, new_feature_emb], 1))
 			dx = self.output_ctrl(merged_feature)
