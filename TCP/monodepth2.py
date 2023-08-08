@@ -56,3 +56,20 @@ class MonodepthModel:
 
 
         return squeezed_features, squeezed_depth_features
+    
+    def predict_img(self, input_image: torch.Tensor) -> torch.Tensor:
+        features_list = []
+        depth_feature_list = []
+        feed_height = self.loaded_dict_enc['height']
+        feed_width = self.loaded_dict_enc['width']
+        resized_tensor = F.interpolate(input_image.unsqueeze(0), size=(feed_height, feed_width), mode='bicubic', align_corners=False)
+        features = self.encoder(resized_tensor)
+        depth_feature = self.depth_decoder(features)
+        features_list.append(features[-1])
+        depth_feature_list.append(depth_feature[("disp", 0)])
+        
+        squeezed_features = torch.cat(features_list, dim=0).squeeze()
+        squeezed_depth_features = torch.cat(depth_feature_list, dim=0).squeeze()
+
+
+        return squeezed_features, squeezed_depth_features

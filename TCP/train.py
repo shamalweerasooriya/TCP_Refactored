@@ -296,10 +296,14 @@ class TCP_planner(pl.LightningModule):
 		img = img.unsqueeze(0)
 		state = state.unsqueeze(0)
 		target_point = target_point.unsqueeze(0)
-		features, depth_features = self.depthmap.predict_depth_batch(img_o)
+		features, depth_features = self.model.depthmap.predict_img(img_o)
+		feature_emb, cnn_feature = self.model.perception(img)
+		test_output = {}
+		test_output['pred_speed'] = self.model.speed_branch(feature_emb)
+		measurement_feature = self.model.measurements(state)
 
-		encoded_depth_features = self.feat_encoder(depth_features.view(-1, 512*6*40))
-		depth_j_traj = self.depth_join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
+		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
+		depth_j_traj = self.model.depth_join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
 		z = depth_j_traj
 		output_depth_wp = list()
 		depth_traj_hidden_state = list()
@@ -310,15 +314,12 @@ class TCP_planner(pl.LightningModule):
 			x_in = torch.cat([x, target_point], dim=1)
 			z = self.model.depth_decoder_traj(x_in, z)
 			depth_traj_hidden_state.append(z)
-			dx = self.depth_output_traj(z)
+			dx = self.model.depth_output_traj(z)
 			x = dx + x
 			output_depth_wp.append(x)
   
 		# print("vis in ---", img.shape, state.shape, target_point.shape)
-		feature_emb, cnn_feature = self.model.perception(img)
-		test_output = {}
-		test_output['pred_speed'] = self.model.speed_branch(feature_emb)
-		measurement_feature = self.model.measurements(state)
+		
 		
 		j_traj = self.model.join_traj(torch.cat([feature_emb, measurement_feature], 1))
 		test_output['pred_value_traj'] = self.model.value_branch_traj(j_traj)
