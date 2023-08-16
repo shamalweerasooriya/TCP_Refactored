@@ -29,7 +29,7 @@ dependencies:
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
   - click=8.0.3=pyhd3eb1b0_0
   - cryptography=3.4.8=py37hd23ed53_0
-  - cudatoolkit=11.3.1=h2bc3f7f_2
+  - cudatoolkit=11.1
   - cycler=0.11.0=pyhd3eb1b0_0
   - cytoolz=0.11.0=py37h7b6447c_0
   - dask-core=2021.10.0=pyhd3eb1b0_0
@@ -119,8 +119,8 @@ dependencies:
   - pysocks=1.7.1=py37_1
   - python=3.7.10=h12debd9_4
   - python-dateutil=2.8.2=pyhd3eb1b0_0
-  - pytorch=1.10.1=py3.7_cuda11.3_cudnn8.2.0_0
-  - pytorch-lightning=1.2.5=pyhd8ed1ab_1
+  - pytorch=1.9.0=py3.7_cuda11.1_cudnn8.0.5_0
+  - pytorch-lightning
   - pytorch-mutex=1.0=cuda
   - pywavelets=1.1.1=py37h7b6447c_2
   - pyyaml=6.0=py37h7f8727e_1
@@ -135,8 +135,8 @@ dependencies:
   - snappy=1.1.8=he6710b0_0
   - sqlite=3.36.0=hc218d9a_0
   - tabulate=0.8.9=py37h06a4308_0
-  - tensorboard=2.4.0=pyhc547734_0
-  - tensorboard-plugin-wit=1.6.0=py_0
+  - tensorboard
+  - tensorboard-plugin-wit
   - termcolor=1.1.0=py37h06a4308_1
   - tifffile=2021.7.2=pyhd3eb1b0_2
   - tk=8.6.11=h1ccaba5_0

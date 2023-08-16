@@ -419,7 +419,6 @@ if __name__ == "__main__":
 	trainer = pl.Trainer.from_argparse_args(args,
 											default_root_dir=args.logdir,
 											gpus = args.gpus,
-											accelerator='ddp',
 											sync_batchnorm=True,
 											plugins=DDPPlugin(find_unused_parameters=False),
 											profiler='simple',
