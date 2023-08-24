@@ -23,6 +23,15 @@ import sys
 import gc
 import pkg_resources
 import sys
+import glob
+try:
+    sys.path.append(glob.glob('/storage/e17-4yp-improving-trajectory/CARLA_0.9.10.1/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
+        sys.version_info.major,
+        sys.version_info.minor,
+        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+except IndexError:
+    pass
+
 import carla
 import copy
 import signal
