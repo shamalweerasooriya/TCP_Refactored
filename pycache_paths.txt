@@ -1,11 +1,3 @@
-*.onnx
-lightning_logs/
-data/
-tb_logs/
-wandb/
-*.json
-log/
-TCP/__pycache__
 scenario_runner/srunner/scenarioconfigs/__pycache__
 scenario_runner/srunner/tools/__pycache__
 scenario_runner/srunner/scenariomanager/actorcontrols/__pycache__
