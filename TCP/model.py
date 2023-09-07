@@ -139,11 +139,11 @@ class TCP(nn.Module):
 			)
 		
 
-	def forward(self, img, img_o, state, target_point):
+	def forward(self, img, state, target_point):
 		feature_emb, cnn_feature = self.perception(img)
 		# Feature embeddings : torch.Size([32, 1000])
 		# CNN features: torch.Size([32, 512, 8, 29])
-		features, depth_features = self.depthmap.predict_depth_batch(img_o)
+		# features, depth_features = self.depthmap.predict_depth_batch(img_o)
 		# depth features: torch.Size([32, 192, 640])
 		outputs = {}
 		outputs['pred_speed'] = self.speed_branch(feature_emb)
