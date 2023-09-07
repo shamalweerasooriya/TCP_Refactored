@@ -201,6 +201,8 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		pred= self.net(rgb, state, target_point)
 
+		# check here for fusion scheme
+
 		steer_ctrl, throttle_ctrl, brake_ctrl, metadata = self.net.process_action(pred, tick_data['next_command'], gt_velocity, target_point)
 
 		steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.control_pid(pred['pred_wp'], gt_velocity, target_point)
