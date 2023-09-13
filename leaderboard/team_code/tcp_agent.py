@@ -33,6 +33,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 	def setup(self, path_to_conf_file):
 		self.track = autonomous_agent.Track.SENSORS
 		self.alpha = 0.3
+		self.gamma = 0.5
 		self.status = 0
 		self.steer_step = 0
 		self.last_moving_status = 0
@@ -201,39 +202,48 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		target_point = torch.stack(tick_data['target_point'], dim=1).to('cuda', dtype=torch.float32)
 		state = torch.cat([speed, target_point, cmd_one_hot], 1)
 
-		pred= self.net(rgb, state, target_point)
+		pred= self.net(rgb, rgb_o, state, target_point)
 
-		# check here for fusion scheme
 
 		steer_ctrl, throttle_ctrl, brake_ctrl, metadata = self.net.process_action(pred, tick_data['next_command'], gt_velocity, target_point)
-
-		steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.control_pid(pred['pred_depth_wp'], gt_velocity, target_point)
+		steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.control_pid(pred['pred_wp'], gt_velocity, target_point)
+		steer_depth_traj, throttle_depth_traj, brake_depth_traj, metadata_depth_traj = self.net.control_pid(pred['pred_depth_wp'], gt_velocity, target_point)
+		
 		if brake_traj < 0.05: brake_traj = 0.0
 		if throttle_traj > brake_traj: brake_traj = 0.0
 
 		self.pid_metadata = metadata_traj
 		control = carla.VehicleControl()
 
+		# depth traj branch and og traj branch combined
+		steer_depth_combined_traj = self.gamma*steer_traj + (1-self.gamma)*steer_depth_traj
+		throttle_depth_combined_traj = self.gamma*throttle_traj + (1-self.gamma)*throttle_depth_traj
+		brake_depth_combined_traj = self.gamma*brake_traj + (1-self.gamma)*brake_depth_traj
+
+
 		if self.status == 0:
 			self.alpha = 0.3
 			self.pid_metadata['agent'] = 'traj'
-			control.steer = np.clip(self.alpha*steer_ctrl + (1-self.alpha)*steer_traj, -1, 1)
-			control.throttle = np.clip(self.alpha*throttle_ctrl + (1-self.alpha)*throttle_traj, 0, 0.75)
-			control.brake = np.clip(self.alpha*brake_ctrl + (1-self.alpha)*brake_traj, 0, 1)
+			control.steer = np.clip(self.alpha*steer_ctrl + (1-self.alpha)* steer_depth_combined_traj, -1, 1)
+			control.throttle = np.clip(self.alpha*throttle_ctrl + (1-self.alpha)*throttle_depth_combined_traj, 0, 0.75)
+			control.brake = np.clip(self.alpha*brake_ctrl + (1-self.alpha)*brake_depth_combined_traj, 0, 1)
 		else:
 			self.alpha = 0.3
 			self.pid_metadata['agent'] = 'ctrl'
-			control.steer = np.clip(self.alpha*steer_traj + (1-self.alpha)*steer_ctrl, -1, 1)
-			control.throttle = np.clip(self.alpha*throttle_traj + (1-self.alpha)*throttle_ctrl, 0, 0.75)
-			control.brake = np.clip(self.alpha*brake_traj + (1-self.alpha)*brake_ctrl, 0, 1)
+			control.steer = np.clip(self.alpha*steer_depth_combined_traj + (1-self.alpha)*steer_ctrl, -1, 1)
+			control.throttle = np.clip(self.alpha*throttle_depth_combined_traj + (1-self.alpha)*throttle_ctrl, 0, 0.75)
+			control.brake = np.clip(self.alpha*brake_depth_combined_traj + (1-self.alpha)*brake_ctrl, 0, 1)
 
 
 		self.pid_metadata['steer_ctrl'] = float(steer_ctrl)
 		self.pid_metadata['steer_traj'] = float(steer_traj)
+		self.pid_metadata['steer_depth_traj'] = float(steer_depth_traj)
 		self.pid_metadata['throttle_ctrl'] = float(throttle_ctrl)
 		self.pid_metadata['throttle_traj'] = float(throttle_traj)
+		self.pid_metadata['throttle_depth_traj'] = float(throttle_depth_traj)
 		self.pid_metadata['brake_ctrl'] = float(brake_ctrl)
 		self.pid_metadata['brake_traj'] = float(brake_traj)
+		self.pid_metadata['brake_depth_traj'] = float(brake_depth_traj)
 
 		if control.brake > 0.5:
 			control.throttle = float(0)
