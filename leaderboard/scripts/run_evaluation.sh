@@ -20,10 +20,10 @@ export RESUME=True
 # TCP evaluation
 export ROUTES=leaderboard/data/evaluation_routes/routes_lav_valid.xml
 export TEAM_AGENT=team_code/tcp_agent.py
-export TEAM_CONFIG=/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt
+export TEAM_CONFIG=/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/Depth_attention_test_02/TCP/epoch=59-last.ckpt
 export CHECKPOINT_ENDPOINT=results_TCP.json
 export SCENARIOS=leaderboard/data/scenarios/all_towns_traffic_scenarios.json
-export SAVE_PATH=data/results_TCP/
+export SAVE_PATH=/storage/scratch/e17-4yp-autonomous-driving/g04/depth-inference
 
 
 python3 ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py \
