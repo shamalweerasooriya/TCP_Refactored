@@ -21,7 +21,7 @@ from TCP.model import TCP
 from TCP.config import GlobalConfig
 from team_code.planner import RoutePlanner
 
-from TCP.monodepth2 import MonodepthModel
+#from TCP.monodepth2 import MonodepthModel
 
 
 SAVE_PATH = os.environ.get('SAVE_PATH', None)
@@ -83,7 +83,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 			(self.save_path / 'meta').mkdir()
 			(self.save_path / 'bev').mkdir()
 
-		self.monodepth_model = MonodepthModel(use_gpu=False)
+		#self.monodepth_model = MonodepthModel(use_gpu=False)
 
 	def _init(self):
 		self._route_planner = RoutePlanner(4.0, 50.0)
@@ -277,9 +277,9 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 	def save(self, tick_data):
 		frame = self.step // 10
 
-		f, df = self.monodepth_model.predict_depth_batch(tick_data['rgb'])
+		# f, df = self.monodepth_model.predict_depth_batch(tick_data['rgb'])
 
-		Image.fromarray(df).save(self.save_path / 'mono_depth' / ('%04d.png' % frame))
+		# Image.fromarray(df).save(self.save_path / 'mono_depth' / ('%04d.png' % frame))
 
 		Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
 
