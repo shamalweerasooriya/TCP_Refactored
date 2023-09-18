@@ -83,45 +83,36 @@ class TCP_planner(pl.LightningModule):
 		dist_depth_pred = Beta(pred['mu_depth_branches'], pred['sigma_depth_branches'])
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 		kl_div_depth = torch.distributions.kl_divergence(dist_sup, dist_depth_pred)
-		action_loss = torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
-		action_loss_depth = torch.mean(kl_div_depth[:, 0]) * 0.5 + torch.mean(kl_div_depth[:, 1]) *0.5
+		action_loss = torch.mean(kl_div[:, 0]) * (1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div[:, 1]) * (1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div_depth[:, 0]) * self.config.depth_branch_weight + torch.mean(kl_div_depth[:, 1]) * self.config.depth_branch_weight
 		speed_loss = F.l1_loss(pred['pred_speed'], speed) * self.config.speed_weight
-		depth_value_loss = (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_traj'], value)) * self.config.value_weight
-		depth_feature_loss = (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_traj'], feature))* self.config.features_weight
-		value_loss = (F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * self.config.value_weight
-		feature_loss = (F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* self.config.features_weight
+		value_loss = ((F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * (1 - self.config.depth_branch_weight) +
+					 (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_ctrl'], value)) * self.config.depth_branch_weight) * self.config.value_weight
+		feature_loss = ((F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* (1 - self.config.depth_branch_weight) +
+					   (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_ctrl'], feature)) * self.config.depth_branch_weight) * self.config.features_weight
+		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean() * (1 - self.config.depth_branch_weight) + F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean() * self.config.depth_branch_weight
 
 		future_feature_loss = 0
 		future_action_loss = 0
-		future_depth_feature_loss = 0
-		future_depth_action_loss = 0
 		for i in range(self.config.pred_len):
 			dist_sup = Beta(batch['future_action_mu'][i], batch['future_action_sigma'][i])
 			dist_pred = Beta(pred['future_mu'][i], pred['future_sigma'][i])
 			dist_depth_pred = Beta(pred['future_depth_mu'][i], pred['future_depth_sigma'][i])
 			kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 			kl_div_depth = torch.distributions.kl_divergence(dist_sup, dist_depth_pred)
-			future_action_loss += torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
-			future_feature_loss += F.mse_loss(pred['future_feature'][i], batch['future_feature'][i]) * self.config.features_weight
-			future_depth_action_loss += torch.mean(kl_div_depth[:, 0]) *0.5 + torch.mean(kl_div_depth[:, 1]) *0.5
-			future_depth_feature_loss += F.mse_loss(pred['future_depth_feature'][i], batch['future_feature'][i]) * self.config.features_weight
+			future_action_loss += torch.mean(kl_div[:, 0]) * (1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div[:, 1]) * (1 - self.config.depth_branch_weight) + torch.mean(kl_div_depth[:, 0]) * self.config.depth_branch_weight + torch.mean(kl_div_depth[:, 1]) * self.config.depth_branch_weight
+			future_feature_loss += (F.mse_loss(pred['future_feature'][i], batch['future_feature'][i]) * (1 - self.config.depth_branch_weight) + 
+									F.mse_loss(pred['future_depth_feature'][i], batch['future_feature'][i]) * self.config.depth_branch_weight) * self.config.features_weight
 		future_feature_loss /= self.config.pred_len
 		future_action_loss /= self.config.pred_len
-		depth_wp_loss = F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean()
-		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean()
-		loss = action_loss + action_loss_depth + speed_loss + depth_value_loss + depth_feature_loss + value_loss + feature_loss + depth_wp_loss + wp_loss + future_feature_loss + future_action_loss + future_depth_action_loss + future_depth_feature_loss
+
+		loss = action_loss + speed_loss + value_loss + feature_loss + wp_loss + future_feature_loss + future_action_loss
 		self.log('train_action_loss', action_loss.item())
-		self.log('train_depth_wp_loss', depth_wp_loss.item())
 		self.log('train_wp_loss_loss', wp_loss.item())
 		self.log('train_speed_loss', speed_loss.item())
-		self.log('train_value_loss', depth_value_loss.item())
-		self.log('train_feature_loss', depth_feature_loss.item())
 		self.log('train_value_loss', value_loss.item())
 		self.log('train_feature_loss', feature_loss.item())
 		self.log('train_future_feature_loss', future_feature_loss.item())
 		self.log('train_future_action_loss', future_action_loss.item())
-		self.log('train_future_depth_feature_loss', future_depth_feature_loss.item())
-		self.log('train_future_depth_action_loss', future_depth_action_loss.item())
 		self.log('train_total_loss', loss.item())
 		randint = random.randint(0, 19)
 		self.log('speed', batch['speed'].to(dtype=torch.float32).view(-1,1)[randint])
@@ -129,11 +120,8 @@ class TCP_planner(pl.LightningModule):
             "loss": loss,
             'train_action_loss':  action_loss,
 			'train_speed_loss':  speed_loss,
-			'train_depth_value_loss': depth_value_loss,
-			'train_depth_feature_loss': depth_feature_loss,
 			'train_value_loss': value_loss,
 			'train_feature_loss': feature_loss,
-			'train_depth_wp_loss_loss': depth_wp_loss,
 			'train_wp_loss_loss': wp_loss,
 			'train_future_feature_loss': future_feature_loss,
 			'train_future_action_loss': future_action_loss,
@@ -164,15 +152,13 @@ class TCP_planner(pl.LightningModule):
 		dist_depth_pred = Beta(pred['mu_depth_branches'], pred['sigma_depth_branches'])
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 		kl_div_depth = torch.distributions.kl_divergence(dist_sup, dist_depth_pred)
-		action_loss = torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
-		action_loss_depth = torch.mean(kl_div_depth[:, 0]) * 0.5 + torch.mean(kl_div_depth[:, 1]) *0.5
+		action_loss = torch.mean(kl_div[:, 0]) * (1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div[:, 1]) * (1 - self.config.depth_branch_weight)/2  + torch.mean(kl_div_depth[:, 0]) * (self.config.depth_branch_weight)/2  + torch.mean(kl_div_depth[:, 1]) * (self.config.depth_branch_weight)/2 
 		speed_loss = F.l1_loss(pred['pred_speed'], speed) * self.config.speed_weight
-		depth_value_loss = (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_traj'], value)) * self.config.value_weight
-		depth_feature_loss = (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_traj'], feature))* self.config.features_weight
-		value_loss = (F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * self.config.value_weight
-		feature_loss = (F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* self.config.features_weight
-		depth_wp_loss = F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean()
-		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean()
+		value_loss = ((F.mse_loss(pred['pred_value_traj'], value) + F.mse_loss(pred['pred_value_ctrl'], value)) * (1 - self.config.depth_branch_weight) +
+					 (F.mse_loss(pred['pred_depth_value_traj'], value) + F.mse_loss(pred['pred_depth_value_ctrl'], value)) * self.config.depth_branch_weight) * self.config.value_weight
+		feature_loss = ((F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* (1 - self.config.depth_branch_weight) +
+					   (F.mse_loss(pred['pred_depth_features_traj'], feature) +F.mse_loss(pred['pred_depth_features_ctrl'], feature)) * self.config.depth_branch_weight) * self.config.features_weight
+		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean() * (1 - self.config.depth_branch_weight) + F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean() * self.config.depth_branch_weight
 
 		B = batch['action_mu'].shape[0]
 		batch_steer_l1 = 0 
@@ -200,45 +186,31 @@ class TCP_planner(pl.LightningModule):
 
 		future_feature_loss = 0
 		future_action_loss = 0
-		future_depth_feature_loss = 0
-		future_depth_action_loss = 0
 		for i in range(self.config.pred_len-1):
 			dist_sup = Beta(batch['future_action_mu'][i], batch['future_action_sigma'][i])
 			dist_pred = Beta(pred['future_mu'][i], pred['future_sigma'][i])
 			dist_depth_pred = Beta(pred['future_depth_mu'][i], pred['future_depth_sigma'][i])
 			kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
 			kl_div_depth = torch.distributions.kl_divergence(dist_sup, dist_depth_pred)
-			future_action_loss += torch.mean(kl_div[:, 0]) *0.5 + torch.mean(kl_div[:, 1]) *0.5
-			future_feature_loss += F.mse_loss(pred['future_feature'][i], batch['future_feature'][i]) * self.config.features_weight
-			future_depth_action_loss += torch.mean(kl_div_depth[:, 0]) *0.5 + torch.mean(kl_div_depth[:, 1]) *0.5
-			future_depth_feature_loss += F.mse_loss(pred['future_depth_feature'][i], batch['future_feature'][i]) * self.config.features_weight
+			future_action_loss += torch.mean(kl_div[:, 0]) *(1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div[:, 1]) *(1 - self.config.depth_branch_weight)/2 + torch.mean(kl_div_depth[:, 0]) *self.config.depth_branch_weight + torch.mean(kl_div_depth[:, 1]) *self.config.depth_branch_weight
+			future_feature_loss += (F.mse_loss(pred['future_feature'][i], batch['future_feature'][i]) * (1 - self.config.depth_branch_weight) + F.mse_loss(pred['future_depth_feature'][i], batch['future_feature'][i]) * self.config.depth_branch_weight) * self.config.features_weight
 		future_feature_loss /= self.config.pred_len
 		future_action_loss /= self.config.pred_len
-		future_depth_action_loss /= self.config.pred_len
-		future_depth_feature_loss /= self.config.pred_len
 
-		val_loss = wp_loss + batch_throttle_l1+5*batch_steer_l1+batch_brake_l1 + depth_wp_loss + batch_throttle_l1_d+5*batch_steer_l1_d+batch_brake_l1_d
+		val_loss = wp_loss + batch_throttle_l1+5*batch_steer_l1+batch_brake_l1 + batch_throttle_l1_d+5*batch_steer_l1_d+batch_brake_l1_d
 
 		self.log("val_action_loss", action_loss.item(), sync_dist=True)
 		self.log('val_speed_loss', speed_loss.item(), sync_dist=True)
-		self.log('val_depth_value_loss', depth_value_loss.item(), sync_dist=True)
-		self.log('val_depth_feature_loss', depth_feature_loss.item(), sync_dist=True)
 		self.log('val_value_loss', value_loss.item(), sync_dist=True)
 		self.log('val_feature_loss', feature_loss.item(), sync_dist=True)
-		self.log('val_depth_wp_loss_loss', depth_wp_loss.item(), sync_dist=True)
 		self.log('val_wp_loss_loss', wp_loss.item(), sync_dist=True)
 		self.log('val_future_feature_loss', future_feature_loss.item(), sync_dist=True)
 		self.log('val_future_action_loss', future_action_loss.item(), sync_dist=True)
-		self.log('val_future_feature_loss', future_depth_feature_loss.item(), sync_dist=True)
-		self.log('val_future_action_loss', future_depth_action_loss.item(), sync_dist=True)
 		self.log('val_loss', val_loss.item(), sync_dist=True)
 		return {'val_action_loss':  action_loss,
           		'val_speed_loss':  speed_loss,
-			  	'val_depth_value_loss': depth_value_loss,
-				'val_depth_feature_loss': depth_feature_loss,
 				'val_value_loss': value_loss,
 				'val_feature_loss': feature_loss,
-				'val_depth_wp_loss_loss': depth_wp_loss,
 				'val_wp_loss_loss': wp_loss,
 				'val_future_feature_loss': future_feature_loss,
 				'val_future_action_loss': future_action_loss,
@@ -397,6 +369,7 @@ class TCP_planner(pl.LightningModule):
 			future_mu.append(mu)
 			future_sigma.append(sigma)
 
+		img_o = img_o.unsqueeze(0)
 		features, depth_features = self.model.depthmap.predict_depth_batch(img_o)
 		
 		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
@@ -466,8 +439,8 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="depth-attention")
-	wandb_logger = WandbLogger(name="depth-attention")
+	logger = TensorBoardLogger("tb_logs", name="depth-attention-v2")
+	wandb_logger = WandbLogger(name="depth-attention-v2")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')

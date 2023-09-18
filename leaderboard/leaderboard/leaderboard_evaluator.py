@@ -23,6 +23,11 @@ import sys
 import gc
 import pkg_resources
 import sys
+try:
+    sys.path.append("/storage/e17-4yp-improving-trajectory/CARLA_0.9.10.1/PythonAPI/carla/dist/carla-0.9.11-py3.8-win-amd64.egg")
+except IndexError:
+    pass
+import carla
 import carla
 import copy
 import signal
