@@ -1,5 +1,6 @@
 import argparse
 import os
+import io
 from collections import OrderedDict
 
 import torch
@@ -10,13 +11,16 @@ from torch.distributions import Beta
 import torchvision
 import random
 import wandb
-
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 from pytorch_lightning.loggers import WandbLogger
+import torchvision.transforms as transforms
 
 from TCP.model import TCP
 from TCP.data import CARLA_Data
@@ -227,7 +231,7 @@ class TCP_planner(pl.LightningModule):
 			# self.logger.experiment.add_graph(self.model, self.ref_front_img.unsqueeze(0), self.ref_state.unsqueeze(0), self.ref_target_point.unsqueeze(0))
 			# logger._log_graph = True
    
-		self.visActivations(self.ref_front_img, self.ref_front_img_all_o, self.ref_state, self.ref_target_point)
+		self.visActivations(self.ref_front_img, self.ref_front_img_o, self.ref_front_img_all_o, self.ref_state, self.ref_target_point)
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
@@ -284,7 +288,7 @@ class TCP_planner(pl.LightningModule):
 			
 			return {'val_loss': val_loss}
 
-	def visActivations(self, img, img_o, state, target_point):
+	def visActivations(self, img,img_o, img_o_all, state, target_point):
 		
 		# img = torch.Tensor.cpu(img).numpy().T
 		# img = img.swapaxes(0, 1)
@@ -363,17 +367,32 @@ class TCP_planner(pl.LightningModule):
 			future_mu.append(mu)
 			future_sigma.append(sigma)
 
-		original_height = img_o[0].shape[1]
-		original_width = img_o[0].shape[2]
+		original_height = img_o_all[0].shape[1]
+		original_width = img_o_all[0].shape[2]
 		# img_o = img_o.unsqueeze(0)
-		features, depth_features = self.model.depthmap.predict_depth_batch(img_o)
+		features, depth_features = self.model.depthmap.predict_depth_batch(img_o_all)
 		disp_resized = torch.nn.functional.interpolate(depth_features.unsqueeze(0),
     			(original_height, original_width), mode="bilinear", align_corners=False)
 
 		# Saving colormapped depth image
 		disp_resized = disp_resized.squeeze(0)[0]
-		disp_resized_np = disp_resized.detach().numpy()
-		self.logger[0].experiment.add_image("depth_map", disp_resized_np, self.current_epoch, dataformats="CHW")
+		disp_resized_ = disp_resized.squeeze().cpu()
+		disp_resized_np = disp_resized_.detach().numpy()
+		vmax = np.percentile(disp_resized_np, 95)
+
+		plt.figure()
+		plt.imshow(disp_resized_np, cmap='magma', vmax=vmax)
+		plt.title("Disparity prediction", fontsize=22)
+		buf = io.BytesIO()
+		plt.savefig(buf, format='png')
+		buf.seek(0)
+		image = Image.open(buf)
+		transform = transforms.ToTensor()
+		image_tensor = transform(image)
+
+		self.logger[0].experiment.add_image("depth_map", image_tensor, self.current_epoch)
+
+		features, depth_features = self.model.depthmap.predict_depth_batch(img_o)
 
 		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
 
