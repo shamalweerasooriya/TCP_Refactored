@@ -235,9 +235,6 @@ class TCP_planner(pl.LightningModule):
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
-		train_depth_value_loss = torch.stack([x['train_depth_value_loss'] for x in outputs]).mean()
-		train_depth_feature_loss = torch.stack([x['train_depth_feature_loss'] for x in outputs]).mean()
-		train_depth_wp_loss_loss = torch.stack([x['train_depth_wp_loss_loss'] for x in outputs]).mean()
 		train_value_loss = torch.stack([x['train_value_loss'] for x in outputs]).mean()
 		train_feature_loss = torch.stack([x['train_feature_loss'] for x in outputs]).mean()
 		train_wp_loss_loss = torch.stack([x['train_wp_loss_loss'] for x in outputs]).mean()
@@ -247,9 +244,6 @@ class TCP_planner(pl.LightningModule):
 					
 		self.logger[0].experiment.add_scalar("Loss/train_action_loss", train_action_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_speed_loss", train_speed_loss, self.current_epoch)
-		self.logger[0].experiment.add_scalar("Loss/train_depth_value_loss", train_depth_value_loss, self.current_epoch)
-		self.logger[0].experiment.add_scalar("Loss/train_depth_feature_loss", train_depth_feature_loss, self.current_epoch)
-		self.logger[0].experiment.add_scalar("Loss/train_depth_wp_loss_loss", train_depth_wp_loss_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_value_loss", train_value_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_feature_loss", train_feature_loss, self.current_epoch)
 		self.logger[0].experiment.add_scalar("Loss/train_wp_loss_loss", train_wp_loss_loss, self.current_epoch)
@@ -392,7 +386,7 @@ class TCP_planner(pl.LightningModule):
 
 		self.logger[0].experiment.add_image("depth_map", image_tensor, self.current_epoch)
 
-		features, depth_features = self.model.depthmap.predict_depth_batch(img_o)
+		features, depth_features = self.model.depthmap.predict_img(img_o)
 
 		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
 
