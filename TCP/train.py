@@ -67,11 +67,11 @@ class TCP_planner(pl.LightningModule):
 
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, front_img_o, state, target_point)
+		pred = self.model(front_img, state, target_point)
 
 		if(batch_idx==0):
-			self.ref_front_img = front_img[0]
-			self.ref_front_img_all = front_img
+			self.ref_front_img = front_img_o[0]
+			self.ref_front_img_all = front_img_o
 			self.ref_state = state[0] 
 			self.ref_target_point = target_point[0] 
 			print("ref_img_shape: ", self.ref_front_img.shape)
@@ -104,8 +104,6 @@ class TCP_planner(pl.LightningModule):
 		self.log('train_future_feature_loss', future_feature_loss.item())
 		self.log('train_future_action_loss', future_action_loss.item())
 		self.log('train_total_loss', loss.item())
-		randint = random.randint(0, 19)
-		self.log('speed', batch['speed'].to(dtype=torch.float32).view(-1,1)[randint])
 		output = {
             "loss": loss,
             'train_action_loss':  action_loss,
@@ -127,7 +125,6 @@ class TCP_planner(pl.LightningModule):
 
 	def validation_step(self, batch, batch_idx):
 		front_img = batch['front_img']
-		front_img_o = batch['front_img_o']
 		speed = batch['speed'].to(dtype=torch.float32).view(-1,1) / 12.
 		target_point = batch['target_point'].to(dtype=torch.float32)
 		command = batch['target_command']
@@ -136,7 +133,7 @@ class TCP_planner(pl.LightningModule):
 		feature = batch['feature']
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, front_img_o, state, target_point)
+		pred = self.model(front_img, state, target_point)
 		dist_sup = Beta(batch['action_mu'], batch['action_sigma'])
 		dist_pred = Beta(pred['mu_branches'], pred['sigma_branches'])
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
@@ -334,8 +331,8 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="monodepth_initial_test")
-	wandb_logger = WandbLogger()
+	logger = TensorBoardLogger("tb_logs", name="original")
+	wandb_logger = WandbLogger(name="original")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')
@@ -382,7 +379,7 @@ if __name__ == "__main__":
 														],
 											check_val_every_n_epoch = args.val_every,
 											max_epochs = args.epochs,
-											logger=[logger]
+											logger=[logger, wandb_logger]
 											)
 	if args.loadfromcheckpoint>0:
 		trainer = pl.Trainer(
