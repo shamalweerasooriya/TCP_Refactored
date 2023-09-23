@@ -157,7 +157,7 @@ class TCP_planner(pl.LightningModule):
 		speed_loss = F.l1_loss(pred['pred_speed'], speed) * self.config.speed_weight
 		value_loss = (F.mse_loss(pred['pred_value_traj'], value) * (1 - self.config.depth_branch_weight_1) + F.mse_loss(pred['pred_value_ctrl'], value)   +
 					 F.mse_loss(pred['pred_depth_value_traj'], value) * self.config.depth_branch_weight_1 ) * self.config.value_weight
-		feature_loss = ((F.mse_loss(pred['pred_features_traj'], feature) +F.mse_loss(pred['pred_features_ctrl'], feature))* (1 - self.config.depth_branch_weight) +
+		feature_loss = (F.mse_loss(pred['pred_features_traj'], feature)*(1 - self.config.depth_branch_weight) +F.mse_loss(pred['pred_features_ctrl'], feature) +
 					   F.mse_loss(pred['pred_depth_features_traj'], feature) * self.config.depth_branch_weight) * self.config.features_weight
 		wp_loss = F.l1_loss(pred['pred_wp'], gt_waypoints, reduction='none').mean() * (1 - self.config.depth_branch_weight_0) + F.l1_loss(pred['pred_depth_wp'], gt_waypoints, reduction='none').mean() * self.config.depth_branch_weight_0
 
