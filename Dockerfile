@@ -9,8 +9,9 @@ WORKDIR /app
 COPY environment.yml .
 RUN conda env create -f environment.yml --name TCP
 SHELL ["conda", "run", "-n", "TCP", "/bin/bash", "-c"]
-ENV PYTHONPATH $PYTHONPATH:/app/PATH_TO_TCP
+COPY docker-config.env /app/docker-config.env
+ENV PYTHONPATH $PYTHONPATH:/app/TCP
 COPY . .
 
 
-CMD ["python", "TCP/train.py", "--gpus", "all"]
+CMD ["python", "TCP/train.py", "--epochs=$EPOCHS", "--lr=$LR", "--val_every=$VAL_EVERY", "--batch_size=$BATCH_SIZE", "--logdir=$LOGDIR", "--gpus=$GPUS", "--transferloading=$TRANSFERLOADING"]
