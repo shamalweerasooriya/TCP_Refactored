@@ -54,6 +54,8 @@ class GlobalConfig:
 	speed_weight = 0.05
 	value_weight = 0.001
 	features_weight = 0.05
+	depth_branch_weight_0 = 0.5
+	depth_branch_weight_1 = 0.5
 
 	rl_ckpt = "roach/log/ckpt_11833344.pth"
 
