@@ -291,9 +291,33 @@ class TCP_planner(pl.LightningModule):
   
 		# print("vis in ---", img.shape, state.shape, target_point.shape)
 		feature_emb, cnn_feature = self.model.perception(img)
+		features, depth_features = self.model.depthmap.predict_img(img_o)
 		test_output = {}
 		test_output['pred_speed'] = self.model.speed_branch(feature_emb)
 		measurement_feature = self.model.measurements(state)
+
+		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
+		
+		depth_j_traj = self.model.depth_join_traj(torch.cat([encoded_depth_features, measurement_feature], 1))
+		test_output['pred_depth_value_traj'] = self.model.depth_value_branch_traj(depth_j_traj)
+		test_output['pred_depth_features_traj'] = depth_j_traj
+		z = depth_j_traj
+		output_depth_wp = list()
+		depth_traj_hidden_state = list()
+
+		# initial input variable to GRU
+		x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).type_as(z)
+
+		for _ in range(self.config.pred_len):
+			x_in = torch.cat([x, target_point], dim=1)
+			z = self.model.depth_decoder_traj(x_in, z)
+			depth_traj_hidden_state.append(z)
+			dx = self.model.depth_output_traj(z)
+			x = dx + x
+			output_depth_wp.append(x)
+
+		pred_depth_wp = torch.stack(output_depth_wp, dim=1)
+		test_output['pred_depth_wp'] = pred_depth_wp
 		
 		j_traj = self.model.join_traj(torch.cat([feature_emb, measurement_feature], 1))
 		test_output['pred_value_traj'] = self.model.value_branch_traj(j_traj)
@@ -306,9 +330,9 @@ class TCP_planner(pl.LightningModule):
 		x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).type_as(z)
 
 		# autoregressive generation of output waypoints
-		for _ in range(self.model.config.pred_len):
+		for _ in range(self.config.pred_len):
 			x_in = torch.cat([x, target_point], dim=1)
-			z = self.model.decoder_traj_mod(x_in, z)
+			z = self.model.decoder_traj_mod(x_in, torch.cat((depth_j_traj, j_traj), dim=1))
 			traj_hidden_state.append(z)
 			dx = self.model.output_traj_mod(z)
 			x = dx + x
@@ -318,6 +342,7 @@ class TCP_planner(pl.LightningModule):
 		test_output['pred_wp'] = pred_wp
 
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
+		depth_traj_hidden_state = torch.stack(depth_traj_hidden_state, dim=1)
 		init_att = self.model.init_att(measurement_feature).view(-1, 1, 8, 29)
 		feature_emb = torch.sum(cnn_feature*init_att, dim=(2, 3))
 		j_ctrl = self.model.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
@@ -338,7 +363,7 @@ class TCP_planner(pl.LightningModule):
 		for l in range(self.config.pred_len):
 			x_in = torch.cat([x, mu, sigma], dim=1)
 			h = self.model.decoder_ctrl(x_in, h)
-			wp_att = self.model.wp_att_mod(torch.cat([h, traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
+			wp_att = self.model.wp_att_mod(torch.cat([h, traj_hidden_state[:, _], depth_traj_hidden_state[:, _]], 1)).view(-1, 1, 8, 29)
 			attention_map = torch.Tensor.cpu(wp_att.squeeze()).detach()
 			self.logger[0].experiment.add_image("attention_map_" + str(l), attention_map, self.current_epoch, dataformats="HW")
 			new_feature_emb = torch.sum(cnn_feature*wp_att, dim=(2, 3))
@@ -380,7 +405,7 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	log_name = "combined-attention-v2-09-28-ld0=0.5,ld1=0.5"
+	log_name = "combattv2-09-28-ld0=0.5ld1=0.5"
 	logger = TensorBoardLogger("tb_logs", name=log_name)
 	wandb_logger = WandbLogger(name=log_name)
 
