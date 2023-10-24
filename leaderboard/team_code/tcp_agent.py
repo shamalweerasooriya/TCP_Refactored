@@ -173,6 +173,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		tick_data = self.tick(input_data)
 		if self.step < self.config.seq_len:
 			rgb = self._im_transform(tick_data['rgb']).unsqueeze(0)
+			rgb_o = (T.ToTensor()(tick_data['rgb'])).unsqueeze(0)
 
 			control = carla.VehicleControl()
 			control.steer = 0.0
@@ -193,13 +194,14 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		speed = torch.FloatTensor([float(tick_data['speed'])]).view(1,1).to('cuda', dtype=torch.float32)
 		speed = speed / 12
 		rgb = self._im_transform(tick_data['rgb']).unsqueeze(0).to('cuda', dtype=torch.float32)
+		rgb_o = T.ToTensor()(tick_data['rgb']).unsqueeze(0).to('cuda', dtype=torch.float32)
 
 		tick_data['target_point'] = [torch.FloatTensor([tick_data['target_point'][0]]),
 										torch.FloatTensor([tick_data['target_point'][1]])]
 		target_point = torch.stack(tick_data['target_point'], dim=1).to('cuda', dtype=torch.float32)
 		state = torch.cat([speed, target_point, cmd_one_hot], 1)
 
-		pred= self.net(rgb, state, target_point)
+		pred= self.net(rgb, rgb_o, state, target_point)
 
 		steer_ctrl, throttle_ctrl, brake_ctrl, metadata = self.net.process_action(pred, tick_data['next_command'], gt_velocity, target_point)
 

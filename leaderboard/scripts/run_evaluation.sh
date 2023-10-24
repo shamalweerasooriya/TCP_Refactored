@@ -20,10 +20,10 @@ export RESUME=True
 # TCP evaluation
 export ROUTES=leaderboard/data/evaluation_routes/routes_lav_valid.xml
 export TEAM_AGENT=team_code/tcp_agent.py
-export TEAM_CONFIG=/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt
-export CHECKPOINT_ENDPOINT=results_TCP.json
+export TEAM_CONFIG=/home/e17072/Documents/TCP_Refactored/log/combinded-att-v3/TCP/epoch=59-last.ckpt
+export CHECKPOINT_ENDPOINT=combinded-att-v3.json
 export SCENARIOS=leaderboard/data/scenarios/all_towns_traffic_scenarios.json
-export SAVE_PATH=data/ORiginal_town02/
+export SAVE_PATH=data/combinded-att-v3/
 
 
 python3 ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py \

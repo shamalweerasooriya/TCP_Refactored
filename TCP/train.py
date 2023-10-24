@@ -29,7 +29,7 @@ class TCP_planner(pl.LightningModule):
 		self.lr = lr
 		self.config = config
 		self.model = TCP(config)
-		self._load_weight()
+		# self._load_weight()
 		# self.save_hyperparameters()
 
 	def _load_weight(self):
@@ -67,10 +67,11 @@ class TCP_planner(pl.LightningModule):
 
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, state, target_point)
+		pred = self.model(front_img, front_img_o, state, target_point)
 
 		if(batch_idx==0):
-			self.ref_front_img = front_img_o[0]
+			self.ref_front_img = front_img[0]
+			self.ref_front_img_o = front_img_o[0]
 			self.ref_front_img_all = front_img_o
 			self.ref_state = state[0] 
 			self.ref_target_point = target_point[0] 
@@ -125,6 +126,7 @@ class TCP_planner(pl.LightningModule):
 
 	def validation_step(self, batch, batch_idx):
 		front_img = batch['front_img']
+		front_img_o = batch['front_img_o']
 		speed = batch['speed'].to(dtype=torch.float32).view(-1,1) / 12.
 		target_point = batch['target_point'].to(dtype=torch.float32)
 		command = batch['target_command']
@@ -133,7 +135,7 @@ class TCP_planner(pl.LightningModule):
 		feature = batch['feature']
 		gt_waypoints = batch['waypoints']
 
-		pred = self.model(front_img, state, target_point)
+		pred = self.model(front_img, front_img_o, state, target_point)
 		dist_sup = Beta(batch['action_mu'], batch['action_sigma'])
 		dist_pred = Beta(pred['mu_branches'], pred['sigma_branches'])
 		kl_div = torch.distributions.kl_divergence(dist_sup, dist_pred)
@@ -198,7 +200,7 @@ class TCP_planner(pl.LightningModule):
 			# self.logger.experiment.add_graph(self.model, self.ref_front_img.unsqueeze(0), self.ref_state.unsqueeze(0), self.ref_target_point.unsqueeze(0))
 			# logger._log_graph = True
    
-		self.visActivations(self.ref_front_img, self.ref_state, self.ref_target_point)
+		self.visActivations(self.ref_front_img, self.ref_front_img_o, self.ref_state, self.ref_target_point)
         
 		train_action_loss = torch.stack([x['train_action_loss'] for x in outputs]).mean()
 		train_speed_loss =  torch.stack([x['train_speed_loss'] for x in outputs]).mean()
@@ -249,7 +251,7 @@ class TCP_planner(pl.LightningModule):
 			
 			return {'val_loss': val_loss}
 
-	def visActivations(self, img, state, target_point):
+	def visActivations(self, img, img_o, state, target_point):
 		
 		# img = torch.Tensor.cpu(img).numpy().T
 		# img = img.swapaxes(0, 1)
@@ -270,8 +272,13 @@ class TCP_planner(pl.LightningModule):
 		test_output = {}
 		test_output['pred_speed'] = self.model.speed_branch(feature_emb)
 		measurement_feature = self.model.measurements(state)
+
+		features, depth_features = self.model.depthmap.predict_img(img_o)
 		
-		j_traj = self.model.join_traj(torch.cat([feature_emb, measurement_feature], 1))
+		encoded_depth_features = self.model.feat_encoder(depth_features.view(-1, 512*6*40))
+
+		
+		j_traj = self.model.join_traj_mod(torch.cat([feature_emb, encoded_depth_features, measurement_feature], 1))
 		test_output['pred_value_traj'] = self.model.value_branch_traj(j_traj)
 		test_output['pred_features_traj'] = j_traj
 		z = j_traj
@@ -331,8 +338,8 @@ class TCP_planner(pl.LightningModule):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	logger = TensorBoardLogger("tb_logs", name="original")
-	wandb_logger = WandbLogger(name="original")
+	logger = TensorBoardLogger("tb_logs", name="Depth-att-v3")
+	wandb_logger = WandbLogger(name="Depth-att-v3")
 
 	parser.add_argument('--id', type=str, default='TCP', help='Unique experiment identifier.')
 	parser.add_argument('--epochs', type=int, default=60, help='Number of train epochs.')
@@ -400,37 +407,11 @@ if __name__ == "__main__":
 			logger=[logger, wandb_logger])
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)
 	elif args.transferloading:
-		print("---------------------------------------------------------------------------")
-		print("Transfer learning")
-		lr = 0.0001
-		config = GlobalConfig()
-		planner = TCP_planner(config, lr=0.0001)
-		model_dist = torch.load("/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt", map_location=torch.device('cpu'))
-		state_dict = model_dist["state_dict"]
-		remove_prefix = 'model.'
-		state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
-		state_dict1 = {}
-		itr = 0
-		for i in state_dict.keys():
-			if "value_branch_traj" not in i:
-				state_dict1[i]=state_dict[i]
-			else:
-				sizes = [torch.Size([512, 256]),
-							torch.Size([512]),
-							torch.Size([512, 512]),
-							torch.Size([512]),
-							torch.Size([1, 512]),
-							torch.Size([1])]
-				state_dict1[i] = torch.zeros(sizes[itr])
-				itr+=1
-		key_word = 'value_head'
-		planner.model.load_state_dict(state_dict1)
-		optimizer = optim.Adam(planner.model.parameters(), lr=lr, weight_decay=1e-7)
-		lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 30, 0.5)
-		optimizer_state_disk = model_dist["optimizer_states"][0]
-		optimizer.load_state_dict(optimizer_state_disk)
-		optimizer_schudular_disk = model_dist["lr_schedulers"][0]
-		lr_scheduler.load_state_dict(optimizer_schudular_disk) 
-		trainer.fit(planner, dataloader_train, dataloader_val)
+		TCP_model.load_from_checkpoint(
+			"/storage/scratch/e17-4yp-autonomous-driving/g04/TCPModels/best_model.ckpt",
+			strict=False,
+			config=config,
+			lr=args.lr)
+		trainer.fit(TCP_model, dataloader_train, dataloader_val)
 	else:
 		trainer.fit(TCP_model, dataloader_train, dataloader_val)

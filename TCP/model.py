@@ -51,8 +51,8 @@ class TCP(nn.Module):
 							nn.ReLU(inplace=True),
 						)
 
-		self.join_traj = nn.Sequential(
-							nn.Linear(128+1000, 512),
+		self.join_traj_mod = nn.Sequential(
+							nn.Linear(128+1000+1000, 512),
 							nn.ReLU(inplace=True),
 							nn.Linear(512, 512),
 							nn.ReLU(inplace=True),
@@ -138,18 +138,29 @@ class TCP(nn.Module):
 				nn.Linear(512, 256),
 			)
 		
+		self.feat_encoder = nn.Sequential(
+				nn.Flatten(),                  
+				nn.Linear(512*6*40, 1000),    
+				nn.ReLU(),
+				nn.Linear(1000, 1000), 
+				nn.ReLU(),
+			)
+		
 
-	def forward(self, img, state, target_point):
+	def forward(self, img, img_o, state, target_point):
 		feature_emb, cnn_feature = self.perception(img)
 		# Feature embeddings : torch.Size([32, 1000])
 		# CNN features: torch.Size([32, 512, 8, 29])
-		# features, depth_features = self.depthmap.predict_depth_batch(img_o)
+		features, depth_features = self.depthmap.predict_depth_batch(img_o)
 		# depth features: torch.Size([32, 192, 640])
 		outputs = {}
 		outputs['pred_speed'] = self.speed_branch(feature_emb)
 		measurement_feature = self.measurements(state)
+
+		encoded_depth_features = self.feat_encoder(depth_features.view(-1, 512*6*40))
+
 		
-		j_traj = self.join_traj(torch.cat([feature_emb, measurement_feature], 1))
+		j_traj = self.join_traj_mod(torch.cat([feature_emb, encoded_depth_features, measurement_feature], 1))
 		outputs['pred_value_traj'] = self.value_branch_traj(j_traj)
 		outputs['pred_features_traj'] = j_traj
 		z = j_traj
@@ -174,7 +185,7 @@ class TCP(nn.Module):
 		traj_hidden_state = torch.stack(traj_hidden_state, dim=1)
 		init_att = self.init_att(measurement_feature).view(-1, 1, 8, 29)
 		feature_emb = torch.sum(cnn_feature*init_att, dim=(2, 3))
-		j_ctrl = self.join_ctrl(torch.cat([feature_emb, measurement_feature], 1))
+		j_ctrl = self.join_ctrl(torch.cat([feature_emb,  measurement_feature], 1))
 		outputs['pred_value_ctrl'] = self.value_branch_ctrl(j_ctrl)
 		outputs['pred_features_ctrl'] = j_ctrl
 		policy = self.policy_head(j_ctrl)
