@@ -57,7 +57,10 @@ class GlobalConfig:
 	rl_ckpt = "roach/log/ckpt_11833344.pth"
 
 	img_aug = True
-
+	STEER_BOUND = 1.0
+	STEER_BOUNDS = (-STEER_BOUND, STEER_BOUND)
+	THROTTLE_BOUND = 1.0
+	THROTTLE_BOUNDS = (0, THROTTLE_BOUND)
 
 	def __init__(self, **kwargs):
 		for k,v in kwargs.items():

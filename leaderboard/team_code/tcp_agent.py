@@ -17,7 +17,7 @@ from torchvision import transforms as T
 
 from leaderboard.autoagents import autonomous_agent
 
-from TCP.model import TCP
+from TCP.model import TCP, MPCController
 from TCP.config import GlobalConfig
 from team_code.planner import RoutePlanner
 
@@ -46,6 +46,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		self.config = GlobalConfig()
 		self.net = TCP(self.config)
+		self.mpc = MPCController(self.config, 1.0)
 
 
 		ckpt = torch.load(path_to_conf_file)
@@ -164,6 +165,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		local_command_point = np.array([next_wp[0]-pos[0], next_wp[1]-pos[1]])
 		local_command_point = R.T.dot(local_command_point)
 		result['target_point'] = tuple(local_command_point)
+		result['compass'] = compass
 
 		return result
 	@torch.no_grad()
@@ -203,7 +205,15 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		steer_ctrl, throttle_ctrl, brake_ctrl, metadata = self.net.process_action(pred, tick_data['next_command'], gt_velocity, target_point)
 
-		steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.control_pid(pred['pred_wp'], gt_velocity, target_point)
+		# steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.control_pid(pred['pred_wp'], gt_velocity, target_point)
+
+		measurements = {
+			'speed' : gt_velocity,
+			'orient' : tick_data['compass'],
+			
+		} 
+		steer_traj, throttle_traj, brake_traj, metadata_traj = self.mpc.control(pred['pred_wp'], measurements)
+		
 		if brake_traj < 0.05: brake_traj = 0.0
 		if throttle_traj > brake_traj: brake_traj = 0.0
 
