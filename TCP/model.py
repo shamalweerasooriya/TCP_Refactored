@@ -214,6 +214,7 @@ class MPCController(Controller):
 		# v = measurements.player_measurements.forward_speed * 3.6 # km / h
 		v = measurements['speed'].data.cpu().numpy() * 3.6 # km / h
 		ψ = measurements['orient']
+		print(measurements, pts_2D)
 
 		cos_ψ = np.cos(ψ)
 		sin_ψ = np.sin(ψ)
@@ -255,12 +256,12 @@ class MPCController(Controller):
 			'x': x,
 			'y': y,
 		}
-		for i, coeff in enumerate(poly):
-			one_log_dict['poly{}'.format(i)] = coeff
+		# for i, coeff in enumerate(poly):
+		# 	one_log_dict['poly{}'.format(i)] = coeff
 
-		for i in range(pts_car.shape[0]):
-			for j in range(pts_car.shape[1]):
-				one_log_dict['pts_car_{}_{}'.format(i, j)] = pts_car[i][j]
+		# for i in range(pts_car.shape[0]):
+		# 	for j in range(pts_car.shape[1]):
+		# 		one_log_dict['pts_car_{}_{}'.format(i, j)] = pts_car[i][j]
 
 		return self.steer, self.throttle, brake, one_log_dict
 

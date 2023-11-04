@@ -46,7 +46,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		self.config = GlobalConfig()
 		self.net = TCP(self.config)
-		self.mpc = MPCController(self.config, 1.0)
+		self.mpc = MPCController(self.config, 10)
 
 
 		ckpt = torch.load(path_to_conf_file)
@@ -213,6 +213,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 			
 		} 
 		steer_traj, throttle_traj, brake_traj, metadata_traj = self.mpc.control(pred['pred_wp'], measurements)
+		print(f"metadata traj = {metadata_traj}")
 		
 		if brake_traj < 0.05: brake_traj = 0.0
 		if throttle_traj > brake_traj: brake_traj = 0.0
@@ -273,9 +274,9 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		Image.fromarray(tick_data['bev']).save(self.save_path / 'bev' / ('%04d.png' % frame))
 
-		outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
-		json.dump(self.pid_metadata, outfile, indent=4)
-		outfile.close()
+		# outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
+		# json.dump(self.pid_metadata, outfile, indent=4)
+		# outfile.close()
 
 	def destroy(self):
 		del self.net
