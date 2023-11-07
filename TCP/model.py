@@ -210,11 +210,54 @@ class MPCController(Controller):
 		indeces = indeces % pts_2D.shape[0]
 		pts = pts_2D[indeces]
 
+		waypoints = pts_2D
+		num_pairs = len(waypoints) - 1
+		target = measurements['target'].squeeze().data.cpu().numpy()
+
+		# flip y (forward is negative in our waypoints)
+		waypoints[:,1] *= -1
+		target[1] *= -1
+
+		# iterate over vectors between predicted waypoints
+		num_pairs = len(waypoints) - 1
+		best_norm = 1e5
+		desired_speed = 0
+
+		aim = waypoints[0]
+		for i in range(num_pairs):
+			# magnitude of vectors, used for speed
+			desired_speed += np.linalg.norm(
+					waypoints[i+1] - waypoints[i]) * 2.0 / num_pairs
+
+			# norm of vector midpoints, used for steering
+			norm = np.linalg.norm((waypoints[i+1] + waypoints[i]) / 2.0)
+			if abs(self.config.aim_dist-best_norm) > abs(self.config.aim_dist-norm):
+				aim = waypoints[i]
+				best_norm = norm
+
+		aim_last = waypoints[-1] - waypoints[-2]
+
+		angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+		angle_last = np.degrees(np.pi / 2 - np.arctan2(aim_last[1], aim_last[0])) / 90
+		angle_target = np.degrees(np.pi / 2 - np.arctan2(target[1], target[0])) / 90
+
+		# choice of point to aim for steering, removing outlier predictions
+		# use target point if it has a smaller angle or if error is large
+		# predicted point otherwise
+		# (reduces noise in eg. straight roads, helps with sudden turn commands)
+		use_target_to_aim = np.abs(angle_target) < np.abs(angle)
+		use_target_to_aim = use_target_to_aim or (np.abs(angle_target-angle_last) > self.config.angle_thresh and target[1] < self.config.dist_thresh)
+		if use_target_to_aim:
+			angle_final = angle_target
+		else:
+			angle_final = angle
+
+
 		# orient = measurements.player_measurements.transform.orientation
 		# v = measurements.player_measurements.forward_speed * 3.6 # km / h
 		v = measurements['speed'].data.cpu().numpy() * 3.6 # km / h
-		ψ = measurements['orient']
-		print(measurements, pts_2D)
+		ψ = angle_final
+		# print(measurements, pts_2D)
 
 		cos_ψ = np.cos(ψ)
 		sin_ψ = np.sin(ψ)
@@ -245,23 +288,23 @@ class MPCController(Controller):
 		brake = self.target_speed < self.config.brake_speed or (v / self.target_speed) > self.config.brake_ratio
 
 		one_log_dict = {
-			'speed': v,
-			'steer': self.steer,
-			'throttle': self.throttle,
-			'break' : brake,
-			'psi': ψ,
-			'cte': cte,
-			'epsi': eψ,
-			'which_closest': which_closest,
-			'x': x,
-			'y': y,
+			'speed': float(v.astype(np.float64)),
+			'steer': float(self.steer),
+			'throttle': float(self.throttle),
+			'break' : float(brake),
+			'psi': float(ψ),
+			'cte': float(cte),
+			'epsi': float(eψ),
+			# 'which_closest': which_closest,
+			'x': float(x),
+			'y': float(y),
 		}
-		# for i, coeff in enumerate(poly):
-		# 	one_log_dict['poly{}'.format(i)] = coeff
+		for i, coeff in enumerate(poly):
+			one_log_dict['poly{}'.format(i)] = coeff
 
-		# for i in range(pts_car.shape[0]):
-		# 	for j in range(pts_car.shape[1]):
-		# 		one_log_dict['pts_car_{}_{}'.format(i, j)] = pts_car[i][j]
+		for i in range(pts_car.shape[0]):
+			for j in range(pts_car.shape[1]):
+				one_log_dict['pts_car_{}_{}'.format(i, j)] = pts_car[i][j]
 
 		return self.steer, self.throttle, brake, one_log_dict
 
@@ -519,6 +562,10 @@ class TCP(nn.Module):
 		outputs['future_mu'] = future_mu
 		outputs['future_sigma'] = future_sigma
 		return outputs
+
+	def process_mpc(self, waypoints, measurements, speed):
+		mpc = MPCController(self.config, speed)
+		return mpc.control(waypoints, measurements)
 
 	def process_action(self, pred, command, speed, target_point):
 		action = self._get_action_beta(pred['mu_branches'].view(1,2), pred['sigma_branches'].view(1,2))

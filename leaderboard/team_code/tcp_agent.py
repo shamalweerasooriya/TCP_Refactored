@@ -46,7 +46,6 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		self.config = GlobalConfig()
 		self.net = TCP(self.config)
-		self.mpc = MPCController(self.config, 10)
 
 
 		ckpt = torch.load(path_to_conf_file)
@@ -165,7 +164,7 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		local_command_point = np.array([next_wp[0]-pos[0], next_wp[1]-pos[1]])
 		local_command_point = R.T.dot(local_command_point)
 		result['target_point'] = tuple(local_command_point)
-		result['compass'] = compass
+		result['compass'] = theta
 
 		return result
 	@torch.no_grad()
@@ -210,16 +209,21 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 		measurements = {
 			'speed' : gt_velocity,
 			'orient' : tick_data['compass'],
+			'target' : target_point,
 			
 		} 
-		steer_traj, throttle_traj, brake_traj, metadata_traj = self.mpc.control(pred['pred_wp'], measurements)
+		steer_traj, throttle_traj, brake_traj, metadata_traj = self.net.process_mpc(pred['pred_wp'], measurements, gt_velocity)
 		print(f"metadata traj = {metadata_traj}")
+		print(f"metadata ctrl = {metadata}")
 		
 		if brake_traj < 0.05: brake_traj = 0.0
 		if throttle_traj > brake_traj: brake_traj = 0.0
 
 		self.pid_metadata = metadata_traj
 		control = carla.VehicleControl()
+
+		print(f'steer ctrl = {steer_ctrl}, steer traj = {steer_traj}')
+		print(f'throt ctrl = {throttle_ctrl}, steer traj = {throttle_traj}')
 
 		if self.status == 0:
 			self.alpha = 0.3
@@ -274,9 +278,9 @@ class TCPAgent(autonomous_agent.AutonomousAgent):
 
 		Image.fromarray(tick_data['bev']).save(self.save_path / 'bev' / ('%04d.png' % frame))
 
-		# outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
-		# json.dump(self.pid_metadata, outfile, indent=4)
-		# outfile.close()
+		outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
+		json.dump(self.pid_metadata, outfile, indent=4)
+		outfile.close()
 
 	def destroy(self):
 		del self.net
